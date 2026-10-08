@@ -1,0 +1,11 @@
+# Songarooni configuration. Any key left out keeps its built-in default
+# (see internal/config/config.go).
+
+addr: ":8080"
+songs_csv: "songs.csv"
+slide_dir: "test_images"
+default_slideshow: "test_images/default"
+slide_interval_seconds: 2
+logo_frequency: 10
+audio_device: "default"
+log_file: "songarooni.log"

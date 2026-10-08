@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Songarooni</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Songarooni</h1>
+    <div id="click-indicator" class="indicator">●</div>
+  </header>
+
+  <div id="search-row">
+    <input id="search" type="search" placeholder="Search songs…" autocomplete="off">
+    <select id="sort-by"></select>
+  </div>
+
+  <ul id="song-list"></ul>
+
+  <div id="default-tempo">
+    <label for="tempo-input">Default tempo</label>
+    <input id="tempo-input" type="number" min="1" max="300" inputmode="numeric">
+    <button id="tempo-set-btn">Set</button>
+  </div>
+
+  <div id="now-playing">
+    <div id="now-title">No song selected</div>
+    <div id="now-tempo"></div>
+    <div id="up-next"></div>
+  </div>
+
+  <div id="controls">
+    <button id="start-btn">Start</button>
+    <button id="stop-btn">Stop</button>
+    <button id="mute-btn">Mute</button>
+    <button id="logo-btn">Logo</button>
+  </div>
+
+  <div id="error"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+/songarooni
+/dist/
+*.log
+/img-list.txt
+/songarooni-slideshow-logo.png
+plans/
+test_images/
+songs.csv
