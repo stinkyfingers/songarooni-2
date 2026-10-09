@@ -26,7 +26,17 @@ The phone and the Pi need to share a private local network, with no reliance on 
 
 ### Option A — Dedicated router
 
-Connect the Pi to a router via Ethernet, with the router's own Wi-Fi configured with no WAN/internet uplink. The phone joins the router's Wi-Fi. Simpler Pi-side configuration, at the cost of carrying an extra router.
+Connect the Pi to a router via Ethernet; the phone joins the router's Wi-Fi. Simpler Pi-side configuration, at the cost of carrying an extra router. The router's WAN side can either be left disconnected entirely, or — if it's a travel router — bridged to whatever Wi-Fi happens to be available wherever you're playing, without affecting the band network at all.
+
+**Using a travel router** (e.g. GL.iNet and similar): these are built to uplink to an existing Wi-Fi network while serving their own separate SSID downstream — exactly the "connect to a router while also serving" setup. Exact menu names vary by brand, but the shape is the same:
+
+1. Connect to the travel router's own admin page (check the device for its default address/SSID — commonly `192.168.8.1` for GL.iNet).
+2. Find the uplink mode — labeled "Repeater," "WISP," "Internet," or "Client" mode depending on the brand — and have it scan for and join whatever upstream Wi-Fi you want (venue Wi-Fi, a phone hotspot, home Wi-Fi for testing). This is independent of the router's own downstream network.
+3. Set the router's own downstream Wi-Fi SSID/password (e.g. `BandControl`) under its regular Wi-Fi/AP settings — separate from the upstream connection you just configured.
+4. Connect the Pi to one of the router's LAN (not WAN) ports via Ethernet.
+5. The phone joins `BandControl` as usual.
+
+The upstream link only ever provides internet access to devices behind the router — it has no bearing on whether the Pi and phone can reach each other. If the upstream Wi-Fi drops entirely (or you never configure one), the router keeps serving its own `BandControl` network to the Pi and phone exactly the same either way, so there's no real downside to leaving the uplink configured even if you don't always need it.
 
 ### Option B — Pi as its own access point (recommended — no extra hardware)
 
