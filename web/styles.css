@@ -3,15 +3,21 @@
 body {
   margin: 0;
   padding: 1rem;
+  height: 100vh;
+  height: 100dvh; /* accounts for mobile browser chrome (address bar, etc.); ignored where unsupported, 100vh above still applies */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* the page itself never scrolls — #song-list scrolls internally if it still doesn't fit at its minimum */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #111;
   color: #eee;
 }
 
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Every direct child except #song-list keeps its natural height and never
+   shrinks — #song-list is the one flexible region that grows to fill
+   whatever's left and shrinks first when e.g. #default-tempo appears. */
+body > * {
+  flex: none;
 }
 
 h1 {
@@ -61,7 +67,14 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 55vh;
+  /* The one element that grows/shrinks (everything else is pinned to
+     `flex: none` above) — min-height: 0 is what actually lets a flex child
+     shrink below its content's natural height; without it, #default-tempo
+     appearing would push the page taller instead of #song-list yielding
+     the room. overflow-y still catches the case where even the minimum
+     doesn't fit. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -143,12 +156,14 @@ h1 {
 
 #controls {
   display: flex;
-  gap: 0.75rem;
+  flex-wrap: wrap; /* wrap to a second row rather than overflow/shrink-to-illegible on narrow screens */
+  gap: 0.3rem;
 }
 
 #controls button {
-  flex: 1;
-  padding: 1rem;
+  flex: 1 1 4rem; /* prefer ~8rem each; wraps once that no longer fits rather than squeezing narrower */
+  min-width: 0; /* let a button shrink below its text's natural width in the rare case wrap alone isn't enough */
+  padding: 1rem 0.4rem;
   font-size: 1rem;
   border: none;
   border-radius: 10px;
