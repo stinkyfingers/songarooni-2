@@ -6,3 +6,5 @@
 plans/
 test_images/
 songs.csv
+config.prod.yaml
+.DS_Store

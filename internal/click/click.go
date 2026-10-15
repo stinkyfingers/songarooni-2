@@ -47,15 +47,26 @@ func (n *NoopClicker) Stop() error {
 }
 
 // renderBeat renders one beat period (60/tempo seconds) of 16-bit mono PCM
-// at sampleRate: a short sine-wave burst with a fast linear fade-out (so it
-// doesn't pop), followed by silence padding the buffer out to the full beat
-// period.
-func renderBeat(tempo int) []byte {
+// at sampleRate: a short percussive "click" burst — sharp attack, fast
+// exponential decay, like a woodblock hit rather than a tone fading out —
+// followed by silence padding the buffer out to the full beat period.
+// amplitude scales the burst's peak loudness, from 0 (silent) to 1 (full
+// scale).
+//
+// Loudness is perceived energy integrated over roughly 100-200ms, not peak
+// amplitude: a burst much shorter than that — this one used to be 15ms —
+// sounds quiet next to a sustained tone even at the same digital peak, no
+// matter how high amplitude is turned up. burstSeconds and an exponential
+// (rather than linear) decay are what actually fixed that, not amplitude.
+func renderBeat(tempo int, amplitude float64, toneHz float64) []byte {
 	const (
-		toneHz       = 1800.0
-		burstSeconds = 0.015
-		amplitude    = 0.6 // fraction of full scale, to leave headroom
+		burstSeconds = .5
+		// Fraction of peak the envelope has decayed to by the end of the
+		// burst, so the buffer reaches the zero-padding with no audible
+		// discontinuity (pop).
+		tailLevel = 0.01
 	)
+	decayRate := -math.Log(tailLevel) / burstSeconds
 
 	sr := float64(sampleRate)
 	beatSeconds := 60.0 / float64(tempo)
@@ -68,8 +79,8 @@ func renderBeat(tempo int) []byte {
 	buf := make([]byte, totalSamples*2) // 2 bytes per sample (S16_LE)
 	for i := 0; i < burstSamples; i++ {
 		t := float64(i) / sampleRate
-		fade := 1.0 - float64(i)/float64(burstSamples) // linear fade-out
-		sample := amplitude * fade * math.Sin(2*math.Pi*toneHz*t)
+		envelope := math.Exp(-decayRate * t) // sharp attack, exponential decay
+		sample := amplitude * envelope * math.Sin(2*math.Pi*toneHz*t)
 		v := int16(sample * math.MaxInt16)
 		buf[2*i] = byte(v)
 		buf[2*i+1] = byte(v >> 8)

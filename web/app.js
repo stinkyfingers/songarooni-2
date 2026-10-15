@@ -24,6 +24,7 @@ const el = {
   stopBtn: document.getElementById('stop-btn'),
   muteBtn: document.getElementById('mute-btn'),
   logoBtn: document.getElementById('logo-btn'),
+  defaultBtn: document.getElementById('default-btn'),
   indicator: document.getElementById('click-indicator'),
   error: document.getElementById('error'),
 };
@@ -45,10 +46,10 @@ function showError(message) {
 
 function populateSortOptions() {
   const options = [
-    { value: '', label: 'Setlist order' },
-    { value: 'title', label: 'Title' },
-    { value: 'tempo', label: 'Tempo' },
-    ...fields.extra.map((name) => ({ value: name, label: name })),
+    { value: 'title', label: 'TITLE' },
+    { value: 'setlist', label: 'SETLIST' },
+    { value: 'tempo', label: 'TEMPO' },
+    ...fields.extra.map((name) => ({ value: name, label: name.toUpperCase() })),
   ];
   el.sortBy.innerHTML = '';
   for (const opt of options) {
@@ -61,17 +62,22 @@ function populateSortOptions() {
 
 function sortedSongs() {
   const query = el.search.value.trim().toLowerCase();
-  let list = songs.filter((s) => !query || s.title.toLowerCase().includes(query));
+  let list = songs
+    .filter((s) => !query || s.title.toLowerCase().includes(query))
+    .filter((s) => s.id !== DEFAULT_SONG_ID) // hide Default from song list
+    .sort((a, b) => a.title.localeCompare(b.title)); // always sort by ID first, so that the catalog order is stable
 
-  if (sortBy === 'title') {
-    list = [...list].sort((a, b) => a.title.localeCompare(b.title));
-  } else if (sortBy === 'tempo') {
-    list = [...list].sort((a, b) => a.tempo - b.tempo);
-  } else if (sortBy) {
-    list = [...list].sort((a, b) =>
-      ((a.extra && a.extra[sortBy]) || '').localeCompare((b.extra && b.extra[sortBy]) || ''));
+  switch (sortBy) {
+    case 'setlist':
+      return list.sort((a, b) => a.id - b.id);
+    case 'title':
+      return list;
+    case 'tempo':
+      return [...list].sort((a, b) => a.tempo - b.tempo);
+    default:
+      return [...list].sort((a, b) =>
+        ((a.extra && a.extra[sortBy]) || '').localeCompare((b.extra && b.extra[sortBy]) || ''));
   }
-  return list;
 }
 
 function renderList() {
@@ -80,13 +86,22 @@ function renderList() {
     const li = document.createElement('li');
 
     const title = document.createElement('div');
+    const info = document.createElement('div');
     title.className = 'song-title';
+    info.className = 'song-info';
     // Default's tempo is user-adjustable (see the tempo box below), so a
     // static number in the list would just go stale — only show BPM for
     // real songs, whose tempo is fixed from songs.csv.
     title.textContent =
-      song.id === DEFAULT_SONG_ID ? song.title : `${song.title} — ${song.tempo} BPM`;
+      song.id === DEFAULT_SONG_ID ?
+        song.title :
+        `${song.title} — ${song.tempo} BPM`.trim();
+
+    info.textContent = song.id === DEFAULT_SONG_ID ?
+      '' :
+      `${song?.extra?.artist} - ${song?.extra?.genre}`;
     li.appendChild(title);
+    li.appendChild(info);
 
     const shown = fields.displayed
       .map((name) => song.extra && song.extra[name])
@@ -134,6 +149,7 @@ function renderState() {
   el.logoBtn.classList.toggle('active', state.logoActive);
   el.startBtn.disabled = !state.hasSelection || (state.running && state.selectedSongId === state.playingSongId);
   el.stopBtn.disabled = !state.running;
+  el.defaultBtn.classList.toggle('active', state.hasSelection && state.selectedSongId === DEFAULT_SONG_ID);
   showError(state.error);
 
   for (const li of el.list.children) {
@@ -197,6 +213,15 @@ el.muteBtn.addEventListener('click', async () => {
 el.logoBtn.addEventListener('click', async () => {
   try {
     state = await api('POST', '/api/logo');
+    renderState();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+el.defaultBtn.addEventListener('click', async () => {
+  try {
+    state = await api('POST', '/api/select', { id: DEFAULT_SONG_ID });
     renderState();
   } catch (err) {
     showError(err.message);

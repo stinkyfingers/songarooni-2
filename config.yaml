@@ -9,3 +9,5 @@ slide_interval_seconds: 2
 logo_frequency: 10
 audio_device: "default"
 log_file: "songarooni.log"
+click_volume: 1.0
+click_frequency: 1800

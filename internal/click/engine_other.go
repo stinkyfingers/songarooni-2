@@ -8,7 +8,7 @@ import "log"
 // backend wired up (anything besides Linux/aplay or macOS/sox) — this is a
 // safety net so the package still compiles everywhere, not an expected
 // deployment target.
-func New(device string) Clicker {
+func New(device string, volume float64) Clicker {
 	log.Printf("click: no audio backend for this OS; using a silent no-op clicker")
 	return &NoopClicker{}
 }

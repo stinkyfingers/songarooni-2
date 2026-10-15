@@ -18,6 +18,8 @@ type Config struct {
 	SlideIntervalSeconds int      `yaml:"slide_interval_seconds"` // feh: seconds per slide / reload interval
 	LogoFrequency        int      `yaml:"logo_frequency"`         // feh: insert the logo after every N slides
 	AudioDevice          string   `yaml:"audio_device"`           // ALSA device name for the click, e.g. "default" or "hw:1,0"
+	ClickVolume          float64  `yaml:"click_volume"`           // click loudness, 0 (silent) to 1 (full scale)
+	ClickFrequency       float64  `yaml:"click_frequency"`        // click tone frequency in Hz, e.g. 1800
 	LogFile              string   `yaml:"log_file"`               // path to the truncated-on-startup log file
 	DisplayedFields      []string `yaml:"displayed_fields"`       // which extra songs.csv columns to show in the phone's song list (empty: none)
 }
@@ -31,6 +33,8 @@ func defaults() Config {
 		SlideIntervalSeconds: 20,
 		LogoFrequency:        5,
 		AudioDevice:          "default",
+		ClickVolume:          1.0,
+		ClickFrequency:       1800,
 		LogFile:              "songarooni.log",
 	}
 }
