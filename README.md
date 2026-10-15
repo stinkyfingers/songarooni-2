@@ -38,6 +38,25 @@ Connect the Pi to a router via Ethernet; the phone joins the router's Wi-Fi. Sim
 
 The upstream link only ever provides internet access to devices behind the router — it has no bearing on whether the Pi and phone can reach each other. If the upstream Wi-Fi drops entirely (or you never configure one), the router keeps serving its own `BandControl` network to the Pi and phone exactly the same either way, so there's no real downside to leaving the uplink configured even if you don't always need it.
 
+**Using a name instead of the router-assigned IP** (e.g. `http://songarooni.local:8080` instead of `http://192.168.x.x:8080`): Raspberry Pi OS ships mDNS (Avahi) for exactly this — no router configuration needed, and it's what makes `raspberrypi.local` work out of the box on a stock image.
+
+1. Confirm the Pi's hostname is what you want the name to be (one word, no spaces):
+   ```bash
+   hostname   # e.g. "songarooni" — if it's not, `sudo raspi-config` → System Options → Hostname
+   ```
+2. Make sure Avahi is installed and running (usually already is, on Raspberry Pi OS Desktop):
+   ```bash
+   sudo apt install avahi-daemon
+   sudo systemctl enable --now avahi-daemon
+   ```
+3. From the phone, navigate to `http://<hostname>.local:8080` (e.g. `http://songarooni.local:8080`) — no router changes required. iOS has first-class Bonjour/mDNS support built in, so this is reliably the easiest option given the phone side is always an iPhone here.
+
+Two things worth doing alongside this, regardless of whether mDNS works reliably on a given venue's network:
+- **Give the Pi a static DHCP reservation** on the router (bind its MAC address to a fixed IP in the router's admin page) — so even typing the numeric IP as a fallback, it's always the same one, rather than potentially changing after a reboot.
+- **"Add to Home Screen" on the phone** once the URL (name or IP) is confirmed working — turns it into a one-tap icon, which sidesteps the "cumbersome to type" problem entirely regardless of which naming approach you use.
+
+If a venue's network ever blocks mDNS (some router firmwares do, particularly on guest networks), the static-IP-plus-bookmark combination above is the dependable fallback.
+
 ### Option B — Pi as its own access point (recommended — no extra hardware)
 
 The Pi's built-in Wi-Fi creates the network directly; no router required.

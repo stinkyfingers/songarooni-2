@@ -29,6 +29,23 @@ cd "$(dirname "$0")" || exit 1
 CARD=1
 amixer -c "$CARD" sset PCM 100% unmute >/dev/null 2>&1 || true
 
+# If config.yaml's addr uses a privileged port (<1024, e.g. :80), the binary
+# needs cap_net_bind_service to bind it without running as root — see
+# README.md. Only ever asks for a password once: skipped entirely once
+# already granted, and skipped entirely if the configured port doesn't need
+# it at all, so a normal :8080 setup never sees a prompt. Re-granted
+# automatically here after every fresh redeploy, since the capability
+# doesn't carry over when a new binary file replaces the old one.
+port="$(sed -nE 's/^[[:space:]]*addr:[[:space:]]*"?:([0-9]+)"?.*/\1/p' config.yaml 2>/dev/null)"
+if [ -n "$port" ] && [ "$port" -lt 1024 ] 2>/dev/null; then
+	if command -v setcap >/dev/null 2>&1 && command -v getcap >/dev/null 2>&1; then
+		if ! getcap ./songarooni 2>/dev/null | grep -q cap_net_bind_service; then
+			echo "Port $port needs elevated privilege to bind — granting it to ./songarooni once (you may be asked for your password):"
+			sudo setcap 'cap_net_bind_service=+ep' ./songarooni
+		fi
+	fi
+fi
+
 echo "On the phone, navigate to one of these addresses (port is whatever 'addr' is set to in config.yaml, usually :8080):"
 hostname -I
 echo
