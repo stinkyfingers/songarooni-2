@@ -37,6 +37,9 @@ func TestLoadFileValid(t *testing.T) {
 	if len(got) != 1 || got[0].ID != 1 || got[0].Tempo != 120 {
 		t.Fatalf("unexpected songs: %+v", got)
 	}
+	if !got[0].HasImages {
+		t.Fatal("expected HasImages=true for a song with a valid slide directory")
+	}
 	if len(extra) != 0 {
 		t.Fatalf("expected no extra fields, got %v", extra)
 	}
@@ -85,7 +88,8 @@ func TestLoadFileRejectsDuplicateIDs(t *testing.T) {
 // A missing slide directory is a warning, not a load failure: the song
 // still loads (and falls back to the "default" deck at runtime), so a
 // slides-only problem can't take the whole app — click included — down
-// with it.
+// with it. It's flagged via HasImages=false, so a picker can choose to
+// hide it instead.
 func TestLoadFileToleratesMissingSlideDir(t *testing.T) {
 	dir := t.TempDir()
 	slideDir := filepath.Join(dir, "slides")
@@ -105,6 +109,9 @@ func TestLoadFileToleratesMissingSlideDir(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != 1 {
 		t.Fatalf("expected the song to still load despite its missing slide dir: %+v", got)
+	}
+	if got[0].HasImages {
+		t.Fatal("expected HasImages=false for a song with a missing slide directory")
 	}
 }
 

@@ -75,10 +75,11 @@ type Controller struct {
 // can't collide with a real song.
 func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controller {
 	defaultSong := &songs.Song{
-		ID:     slideshow.DefaultID,
-		Title:  "Default",
-		Slides: "default",
-		Tempo:  defaultTempo,
+		ID:        slideshow.DefaultID,
+		Title:     "Default",
+		Slides:    "default",
+		Tempo:     defaultTempo,
+		HasImages: true, // validated separately via default_slideshow at slideshow.New() time, not here
 	}
 
 	all := make([]*songs.Song, 0, len(catalog)+1)

@@ -64,6 +64,7 @@ function sortedSongs() {
   let list = songs
     .filter((s) => !query || s.title.toLowerCase().includes(query))
     .filter((s) => s.id !== DEFAULT_SONG_ID) // hide Default from song list
+    .filter((s) => s.hasImages) // hide songs with no real slides — they'd only ever show the default deck
     .sort((a, b) => a.title.localeCompare(b.title)); // always sort by ID first, so that the catalog order is stable
 
   switch (sortBy) {
@@ -83,6 +84,7 @@ function renderList() {
   el.list.innerHTML = '';
   let i = 0;
   for (const song of sortedSongs()) {
+    console.log(song)
     const li = document.createElement('li');
     li.tabIndex = i; // make the whole row focusable for keyboard navigation
     i++;

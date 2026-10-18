@@ -18,6 +18,13 @@ type Song struct {
 	Slides string // subdirectory name under the configured slide_dir
 	Tempo  int    // beats per minute
 
+	// HasImages is false when Slides' directory was missing or had no
+	// supported image files at load time. The song still loads either way
+	// (see LoadFile) — this just lets callers choose to hide it from a
+	// picker rather than offer a song that'll only ever show the default
+	// deck.
+	HasImages bool
+
 	// Extra holds any CSV columns beyond id/title/slides/tempo, keyed by
 	// their header name (e.g. "Artist", "Year") — free-form metadata for
 	// display, search, and sort, not used by the app's own logic.
@@ -106,6 +113,7 @@ func LoadFile(path, slideDir string) (songList []Song, extraFields []string, err
 			errs = append(errs, fmt.Sprintf("line %d (%s): empty slides directory", line, title))
 			continue
 		}
+		hasImages := true
 		if err := validateSlideDir(slideDir, slides); err != nil {
 			// A broken slide directory is a slides-only problem: warn and
 			// keep the song, rather than refuse to start the whole app
@@ -113,6 +121,7 @@ func LoadFile(path, slideDir string) (songList []Song, extraFields []string, err
 			// the "default" deck at runtime when a song's directory isn't
 			// there.
 			log.Printf("songs: line %d (%s): %s — will fall back to the default slide deck at runtime", line, title, err)
+			hasImages = false
 		}
 
 		tempo, err := strconv.Atoi(strings.TrimSpace(row[3]))
@@ -130,7 +139,7 @@ func LoadFile(path, slideDir string) (songList []Song, extraFields []string, err
 		}
 
 		seenIDs[id] = true
-		songList = append(songList, Song{ID: id, Title: title, Slides: slides, Tempo: tempo, Extra: extra})
+		songList = append(songList, Song{ID: id, Title: title, Slides: slides, Tempo: tempo, HasImages: hasImages, Extra: extra})
 	}
 
 	if len(errs) > 0 {

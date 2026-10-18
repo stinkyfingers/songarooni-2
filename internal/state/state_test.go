@@ -172,14 +172,21 @@ func TestMuteStopsAndResumesClickWithoutStoppingPlayback(t *testing.T) {
 
 func TestDefaultEntryIsAlwaysPresent(t *testing.T) {
 	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
-	found := false
+	var found *songs.Song
 	for _, s := range c.Songs() {
 		if s.ID == slideshow.DefaultID && s.Title == "Default" {
-			found = true
+			s := s
+			found = &s
 		}
 	}
-	if !found {
+	if found == nil {
 		t.Fatal("expected a synthetic Default entry in the catalog")
+	}
+	if !found.HasImages {
+		// Default's deck comes from default_slideshow, validated separately
+		// at slideshow.New() time — it must not get hidden by a HasImages
+		// filter the way a CSV song with a bad slide dir would.
+		t.Fatal("expected HasImages=true on the synthetic Default entry")
 	}
 }
 

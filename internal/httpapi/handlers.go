@@ -13,10 +13,11 @@ import (
 )
 
 type songDTO struct {
-	ID    int               `json:"id"`
-	Title string            `json:"title"`
-	Tempo int               `json:"tempo"`
-	Extra map[string]string `json:"extra,omitempty"`
+	ID        int               `json:"id"`
+	Title     string            `json:"title"`
+	Tempo     int               `json:"tempo"`
+	HasImages bool              `json:"hasImages"`
+	Extra     map[string]string `json:"extra,omitempty"`
 }
 
 type fieldsDTO struct {
@@ -34,7 +35,7 @@ func Handler(controller *state.Controller, extraFields, displayedFields []string
 		catalog := controller.Songs()
 		dtos := make([]songDTO, len(catalog))
 		for i, s := range catalog {
-			dtos[i] = songDTO{ID: s.ID, Title: s.Title, Tempo: s.Tempo, Extra: s.Extra}
+			dtos[i] = songDTO{ID: s.ID, Title: s.Title, Tempo: s.Tempo, HasImages: s.HasImages, Extra: s.Extra}
 		}
 		writeJSON(w, http.StatusOK, dtos)
 	})
