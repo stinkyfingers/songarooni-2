@@ -3,7 +3,7 @@
 
 addr: ":8080"
 songs_csv: "songs.csv"
-slide_dir: "test_images"
+slide_dir: "../py_scripts/image_creator/generated_band_photos"
 default_slideshow: "test_images/default"
 slide_interval_seconds: 2
 logo_frequency: 10

@@ -25,7 +25,6 @@ const el = {
   muteBtn: document.getElementById('mute-btn'),
   logoBtn: document.getElementById('logo-btn'),
   defaultBtn: document.getElementById('default-btn'),
-  indicator: document.getElementById('click-indicator'),
   error: document.getElementById('error'),
 };
 
@@ -82,8 +81,11 @@ function sortedSongs() {
 
 function renderList() {
   el.list.innerHTML = '';
+  let i = 0;
   for (const song of sortedSongs()) {
     const li = document.createElement('li');
+    li.tabIndex = i; // make the whole row focusable for keyboard navigation
+    i++;
 
     const title = document.createElement('div');
     const info = document.createElement('div');
@@ -144,7 +146,6 @@ function renderState() {
     el.tempoInput.value = state.selectedTempo;
   }
 
-  el.indicator.classList.toggle('on', state.running && !state.muted);
   el.muteBtn.classList.toggle('active', state.muted);
   el.logoBtn.classList.toggle('active', state.logoActive);
   el.startBtn.disabled = !state.hasSelection || (state.running && state.selectedSongId === state.playingSongId);
@@ -240,6 +241,31 @@ el.tempoSetBtn.addEventListener('click', async () => {
     renderState();
   } catch (err) {
     showError(err.message);
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'PageDown') {
+    e.preventDefault();
+    const selected = el.list.querySelector('.selected');
+    const next = selected?.nextElementSibling || el.list.firstElementChild;
+    next?.click();
+    next?.focus();
+  }
+  if (e.code === 'PageUp') {
+    e.preventDefault();
+    const selected = el.list.querySelector('.selected');
+    const prev = selected?.previousElementSibling || el.list.lastElementChild;
+    prev?.click();
+    prev?.focus();
+  }
+  if (e.code === 'Space') {
+    e.preventDefault();
+    el.defaultBtn.click();
+  }
+  if (e.code === 'Enter') {
+    e.preventDefault();
+    el.startBtn.click();
   }
 });
 
