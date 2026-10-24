@@ -159,6 +159,7 @@ func (c *Controller) Start() error {
 	}
 	c.display.Show(c.selected.ID)
 	c.playing = c.selected
+	c.logoActive = false // starting a song already moves the display off the logo; keep the flag truthful
 	c.lastErr = ""
 	return nil
 }

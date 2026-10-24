@@ -1,5 +1,6 @@
 const POLL_MS = 750;
 const DEFAULT_SONG_ID = 0;
+const MAX_TITLE_LENGTH = 20; // truncate long titles in the "Now" display
 
 let songs = [];
 let fields = { extra: [], displayed: [] };
@@ -131,10 +132,12 @@ function renderList() {
 
 function renderState() {
   if (state.running) {
-    el.nowTitle.textContent = `Now playing: ${state.playingTitle}`;
+    const playingTitle = state.playingTitle.length > MAX_TITLE_LENGTH ? state.playingTitle.slice(0, MAX_TITLE_LENGTH - 3) + '...' : state.playingTitle;
+    el.nowTitle.textContent = `Playing: ${playingTitle}`;
     el.nowTempo.textContent = `${state.playingTempo} BPM`;
   } else if (state.hasSelection) {
-    el.nowTitle.textContent = `Selected: ${state.selectedTitle}`;
+    const selectedTitle = state.selectedTitle.length > MAX_TITLE_LENGTH ? state.selectedTitle.slice(0, MAX_TITLE_LENGTH - 3) + '...' : state.selectedTitle;
+    el.nowTitle.textContent = `Selected: ${selectedTitle}`;
     el.nowTempo.textContent = `${state.selectedTempo} BPM`;
   } else {
     el.nowTitle.textContent = 'No song selected';

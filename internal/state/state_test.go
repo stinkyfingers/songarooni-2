@@ -291,3 +291,26 @@ func TestToggleLogoResumesDefaultWhenNothingPlaying(t *testing.T) {
 		t.Fatalf("expected display.Show(DefaultID) when nothing was playing, got %d", got)
 	}
 }
+
+// Start() already moves the display off the logo (it calls
+// display.Show(selected.ID) unconditionally) — LogoActive must follow suit,
+// or the phone UI would keep showing the logo button lit while the screen
+// has actually moved on to the new song.
+func TestStartClearsLogoActive(t *testing.T) {
+	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
+	_ = c.SelectSong(1)
+	_ = c.Start()
+	_ = c.ToggleLogo()
+	if !c.GetState().LogoActive {
+		t.Fatal("expected LogoActive=true after ToggleLogo")
+	}
+
+	_ = c.Stop()
+	_ = c.SelectSong(2)
+	if err := c.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if c.GetState().LogoActive {
+		t.Fatal("expected Start to clear LogoActive")
+	}
+}

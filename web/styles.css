@@ -137,7 +137,7 @@ h1 {
 
 #now-playing {
   text-align: center;
-  margin: 1rem 0;
+  margin: .4em 0;
 }
 
 #now-title {
@@ -189,9 +189,7 @@ h1 {
 }
 
 #error {
-  margin-top: 1rem;
   color: #e74c3c;
-  min-height: 1.2em;
 }
 
 .song-info {
