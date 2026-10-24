@@ -17,8 +17,6 @@ import (
 var (
 	//go:embed logo.png
 	embeddedLogo []byte
-
-	maxSlideshowTime = time.Minute * 5 // switch to default slides after this long without a new match
 )
 
 // DefaultID is the sentinel song id that selects the "default" subdirectory
@@ -126,28 +124,12 @@ func (s *Slideshow) Run(ctx context.Context) error {
 		log.Println("Error writing to img-list.txt:", err)
 	}
 
-	// return to default slides after maxSlideshowTime without a new match
-	timer := time.NewTimer(maxSlideshowTime)
-	defer timer.Stop()
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-				fmt.Println("No new selection for a while; switching to default slides")
-				s.Show(DefaultID)
-			}
-		}
-	}()
-
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case id := <-s.songChan:
-				timer.Reset(maxSlideshowTime)
 				s.current.Store(int64(id))
 
 				var deck []string
@@ -201,7 +183,6 @@ func (s *Slideshow) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	fmt.Println(filepath.Abs(imgList.Name()))
 
 	path, err := (filepath.Abs(imgList.Name()))
 	if err != nil {
@@ -212,12 +193,11 @@ func (s *Slideshow) Run(ctx context.Context) error {
 		"-F",                                // fullscreen
 		"-Z",                                // auto-zoom
 		"-D", fmt.Sprintf("%d", s.interval), // slide delay
-		"-R", fmt.Sprintf("%d", s.interval), // reload every n seconds
+		"-R", fmt.Sprintf("%d", s.interval+1), // reload, deliberately offset from -D — see above
 		"--hide-pointer", // hide mouse cursor
 		"--quiet",        // suppress warnings
 		"-f", path,       // directory to watch
 	}
-
 	// feh exiting for any reason (crash, closed window, X restart, ...)
 	// must not end Run: the goroutines above are tied to ctx and run for
 	// the app's whole lifetime, so returning here on every feh exit would
@@ -281,16 +261,18 @@ func slideDeck(imgDir, logoPath string, logoFrequency int, shuffle bool) ([]stri
 	// "remove old slides" loop in Run when the deck changes; tmpDir itself
 	// is cleaned up by Run's defer on shutdown.
 
-	for i := range slideImages {
-		if i%logoFrequency == 0 && i > 0 { // Insert logo after every x images
-			absLogoPath, err := filepath.Abs(logoPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get absolute path of logo: %w", err)
-			}
-			slideImages = append(slideImages[:i], append([]string{absLogoPath}, slideImages[i:]...)...)
-		}
+	// Odd effect of the logo insertion: if the logo is inserted, feh restarts the slideshow after every logo.
 
-	}
+	// for i := range slideImages {
+	// 	if i%logoFrequency == 0 && i > 0 { // Insert logo after every x images
+	// 		absLogoPath, err := filepath.Abs(logoPath)
+	// 		if err != nil {
+	// 			return nil, fmt.Errorf("failed to get absolute path of logo: %w", err)
+	// 		}
+	// 		slideImages = append(slideImages[:i], append([]string{absLogoPath}, slideImages[i:]...)...)
+	// 	}
+
+	// }
 	return slideImages, nil
 }
 

@@ -43,6 +43,11 @@ function showError(message) {
   el.error.textContent = message || '';
 }
 
+function clearSearch() {
+  el.search.value = '';
+  renderList();
+}
+
 function populateSortOptions() {
   const options = [
     { value: 'title', label: 'TITLE' },
@@ -84,7 +89,6 @@ function renderList() {
   el.list.innerHTML = '';
   let i = 0;
   for (const song of sortedSongs()) {
-    console.log(song)
     const li = document.createElement('li');
     li.tabIndex = i; // make the whole row focusable for keyboard navigation
     i++;
@@ -166,6 +170,7 @@ async function selectSong(id) {
   try {
     state = await api('POST', '/api/select', { id });
     renderState();
+    clearSearch();
   } catch (err) {
     showError(err.message);
   }
@@ -229,6 +234,12 @@ el.defaultBtn.addEventListener('click', async () => {
   } catch (err) {
     showError(err.message);
   }
+  try {
+    state = await api('POST', '/api/start');
+    renderState();
+  } catch (err) {
+    showError(err.message);
+  }
 });
 
 el.tempoSetBtn.addEventListener('click', async () => {
@@ -247,14 +258,15 @@ el.tempoSetBtn.addEventListener('click', async () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'PageDown') {
+  console.log(`Key: ${e.key} | Code: ${e.code}`)
+  if (e.code === 'PageDown' || e.code === 'ArrowDown') {
     e.preventDefault();
     const selected = el.list.querySelector('.selected');
     const next = selected?.nextElementSibling || el.list.firstElementChild;
     next?.click();
     next?.focus();
   }
-  if (e.code === 'PageUp') {
+  if (e.code === 'PageUp' || e.code === 'ArrowUp') {
     e.preventDefault();
     const selected = el.list.querySelector('.selected');
     const prev = selected?.previousElementSibling || el.list.lastElementChild;
@@ -285,6 +297,13 @@ document.addEventListener('keydown', (e) => {
     populateSortOptions();
     renderList();
     renderState();
+    // Some iOS/WebKit builds don't reliably deliver hardware-keyboard
+    // keydown events to the page at all unless *something* is focused —
+    // desktop browsers fire the document-level listener below regardless.
+    // Focusing the first row on load, rather than waiting for a keypress to
+    // focus something reactively, is a minimal test of that theory without
+    // changing how navigation itself works.
+    el.list.firstElementChild?.focus();
   } catch (err) {
     showError(err.message);
   }
