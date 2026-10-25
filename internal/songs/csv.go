@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -145,6 +146,17 @@ func LoadFile(path, slideDir string) (songList []Song, extraFields []string, err
 	if len(errs) > 0 {
 		return nil, nil, fmt.Errorf("%s has %d problem(s):\n%s", path, len(errs), strings.Join(errs, "\n"))
 	}
+
+	// Alphabetical by title, case-insensitively — sorted once here so every
+	// consumer (the phone's default list view, and the pedal's next/previous
+	// navigation) sees the same natural order with no sorting logic
+	// duplicated elsewhere. Case-insensitive because a naive byte-wise sort
+	// would put every uppercase-starting title before every lowercase one
+	// ("Zebra" before "american Girl"), not what "alphabetical" means here.
+	sort.Slice(songList, func(i, j int) bool {
+		return strings.ToLower(songList[i].Title) < strings.ToLower(songList[j].Title)
+	})
+
 	return songList, extraFields, nil
 }
 

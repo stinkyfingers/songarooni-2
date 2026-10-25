@@ -52,7 +52,6 @@ function clearSearch() {
 function populateSortOptions() {
   const options = [
     { value: 'title', label: 'TITLE' },
-    { value: 'setlist', label: 'SETLIST' },
     { value: 'tempo', label: 'TEMPO' },
     ...fields.extra.map((name) => ({ value: name, label: name.toUpperCase() })),
   ];
@@ -70,12 +69,9 @@ function sortedSongs() {
   let list = songs
     .filter((s) => !query || s.title.toLowerCase().includes(query))
     .filter((s) => s.id !== DEFAULT_SONG_ID) // hide Default from song list
-    .filter((s) => s.hasImages) // hide songs with no real slides — they'd only ever show the default deck
     .sort((a, b) => a.title.localeCompare(b.title)); // always sort by ID first, so that the catalog order is stable
 
   switch (sortBy) {
-    case 'setlist':
-      return list.sort((a, b) => a.id - b.id);
     case 'title':
       return list;
     case 'tempo':

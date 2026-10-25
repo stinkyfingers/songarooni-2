@@ -222,6 +222,72 @@ func TestSelectingDefaultIsDistinguishableFromNoSelection(t *testing.T) {
 	}
 }
 
+// testCatalog's two songs are already alphabetical (Honky Tonk Women, The
+// Weight) — same order songs.LoadFile would now produce.
+func TestSelectNextAndPreviousWrapAndStartFromEnds(t *testing.T) {
+	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
+
+	// Nothing selected yet: Next starts at the first song, Previous at the last.
+	if err := c.SelectNext(); err != nil {
+		t.Fatalf("SelectNext: %v", err)
+	}
+	if got := c.GetState().SelectedSongID; got != 1 {
+		t.Fatalf("expected SelectNext from no selection to land on song 1, got %d", got)
+	}
+
+	if err := c.SelectNext(); err != nil {
+		t.Fatalf("SelectNext: %v", err)
+	}
+	if got := c.GetState().SelectedSongID; got != 2 {
+		t.Fatalf("expected SelectNext to advance to song 2, got %d", got)
+	}
+
+	// Wrap forward past the last song back to the first.
+	if err := c.SelectNext(); err != nil {
+		t.Fatalf("SelectNext (wrap): %v", err)
+	}
+	if got := c.GetState().SelectedSongID; got != 1 {
+		t.Fatalf("expected SelectNext to wrap to song 1, got %d", got)
+	}
+
+	// Wrap backward past the first song to the last.
+	if err := c.SelectPrevious(); err != nil {
+		t.Fatalf("SelectPrevious (wrap): %v", err)
+	}
+	if got := c.GetState().SelectedSongID; got != 2 {
+		t.Fatalf("expected SelectPrevious to wrap to song 2, got %d", got)
+	}
+}
+
+func TestSelectNextExcludesDefault(t *testing.T) {
+	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
+	_ = c.SelectSong(slideshow.DefaultID)
+
+	if err := c.SelectNext(); err != nil {
+		t.Fatalf("SelectNext: %v", err)
+	}
+	if got := c.GetState().SelectedSongID; got == slideshow.DefaultID {
+		t.Fatal("expected SelectNext to skip past Default, never land on it")
+	}
+}
+
+func TestStartDefaultSelectsAndStarts(t *testing.T) {
+	clicker := &fakeClicker{}
+	display := &fakeDisplay{}
+	c := New(testCatalog(), clicker, display)
+
+	if err := c.StartDefault(); err != nil {
+		t.Fatalf("StartDefault: %v", err)
+	}
+	got := c.GetState()
+	if !got.Running || got.PlayingSongID != slideshow.DefaultID || got.SelectedSongID != slideshow.DefaultID {
+		t.Fatalf("expected Default selected and running, got %+v", got)
+	}
+	if !clicker.running {
+		t.Fatal("expected the clicker running after StartDefault")
+	}
+}
+
 func TestSetDefaultTempo(t *testing.T) {
 	clicker := &fakeClicker{}
 	c := New(testCatalog(), clicker, &fakeDisplay{})

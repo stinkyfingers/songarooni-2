@@ -1,7 +1,8 @@
 #!/bin/bash
 # Double-click this on the Pi to start Songarooni. Must live in the same
 # directory as the compiled `songarooni` binary (copy it there alongside
-# config.yaml/songs.csv/media/ when deploying — see README.md).
+# config.yaml/songs.csv/media/connect-pedal.sh when deploying — see
+# README.md).
 
 # Depending on how the file manager is configured, double-clicking an
 # executable script can run it directly with no terminal attached at all —
@@ -28,6 +29,13 @@ cd "$(dirname "$0")" || exit 1
 # audio_device (e.g. "plughw:1,0" -> CARD=1); adjust if that ever changes.
 CARD=1
 amixer -c "$CARD" sset PCM 100% unmute >/dev/null 2>&1 || true
+
+# Best-effort: make sure the foot pedal is connected before the show starts.
+# Same spirit as the amixer check above — never blocks startup if it fails,
+# since the phone remains a full fallback control either way.
+if [ -x ./connect-pedal.sh ]; then
+	./connect-pedal.sh || true
+fi
 
 # If config.yaml's addr uses a privileged port (<1024, e.g. :80), the binary
 # needs cap_net_bind_service to bind it without running as root — see
