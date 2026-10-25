@@ -5,6 +5,7 @@ const MAX_TITLE_LENGTH = 20; // truncate long titles in the "Now" display
 let songs = [];
 let fields = { extra: [], displayed: [] };
 let sortBy = ''; // '' = catalog order, 'title', 'tempo', or an extra field name
+let lastScrolledSelectedId = null; // only auto-scroll when the selection actually changes, not on every poll
 let state = {
   hasSelection: false, selectedSongId: 0, selectedTitle: '', selectedTempo: 0,
   playingSongId: 0, playingTitle: '', playingTempo: 0,
@@ -163,6 +164,15 @@ function renderState() {
     li.classList.toggle('selected', id === state.selectedSongId);
     li.classList.toggle('playing', id === state.playingSongId);
   }
+
+  // Keep the selected row on-screen as the pedal's Page Up/Down moves it —
+  // only when the selection actually changed, so this doesn't fight a user
+  // manually scrolling the list on every 750ms poll tick.
+  if (state.hasSelection && state.selectedSongId !== lastScrolledSelectedId) {
+    el.list.querySelector(`[data-id="${state.selectedSongId}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  lastScrolledSelectedId = state.selectedSongId;
 }
 
 async function selectSong(id) {
