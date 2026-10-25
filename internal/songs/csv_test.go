@@ -115,6 +115,50 @@ func TestLoadFileToleratesMissingSlideDir(t *testing.T) {
 	}
 }
 
+// LoadFile sorts by title, case-insensitively, regardless of CSV row
+// order — so every consumer (the phone's list view, the pedal's
+// next/previous navigation) sees the same natural order with no sorting
+// logic duplicated elsewhere. Case-insensitive because a naive byte-wise
+// sort would put every uppercase-starting title before every lowercase one.
+func TestLoadFileSortsAlphabeticallyByTitle(t *testing.T) {
+	dir := t.TempDir()
+	slideDir := filepath.Join(dir, "slides")
+	writeSlideDir(t, slideDir, "zebra")
+	writeSlideDir(t, slideDir, "american-girl")
+	writeSlideDir(t, slideDir, "honky-tonk")
+
+	csvPath := filepath.Join(dir, "songs.csv")
+	csv := "id,title,slides,tempo\n" +
+		"1,Zebra,zebra,120\n" +
+		"2,american girl,american-girl,110\n" +
+		"3,Honky Tonk,honky-tonk,118\n"
+	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := LoadFile(csvPath, slideDir)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	want := []string{"american girl", "Honky Tonk", "Zebra"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d songs, got %d", len(want), len(got))
+	}
+	for i, title := range want {
+		if got[i].Title != title {
+			t.Fatalf("expected order %v, got %v", want, titlesOf(got))
+		}
+	}
+}
+
+func titlesOf(songs []Song) []string {
+	titles := make([]string, len(songs))
+	for i, s := range songs {
+		titles[i] = s.Title
+	}
+	return titles
+}
+
 func TestLoadFileRejectsBadTempo(t *testing.T) {
 	dir := t.TempDir()
 	slideDir := filepath.Join(dir, "slides")

@@ -5,6 +5,7 @@
 /songarooni-slideshow-logo.png
 plans/
 test_images/
+generated_band_photos/
 songs.csv
 config.prod.yaml
 .DS_Store

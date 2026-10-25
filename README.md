@@ -88,3 +88,9 @@ A couple of things worth knowing going in:
 
 - Use the Pi's numeric IP address rather than `songarooni.local` — mDNS resolution isn't reliable across every network setup, and the app doesn't currently register an mDNS name anyway.
 - iOS will warn that `BandControl` has no internet connection. That's expected and harmless — the phone can still reach the Pi's site; just confirm Safari actually stays connected to it during a real set rather than switching to cellular.
+
+
+### Configuring Chocolate Foot pedal
+
+- Copy scripts/chocolate.conf to /etc/triggerhappy/triggers.d/ on PI
+- `sudo systemctl restart triggerhappy`

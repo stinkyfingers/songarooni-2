@@ -129,6 +129,72 @@ func (c *Controller) SelectSong(id int) error {
 	return nil
 }
 
+// SelectNext and SelectPrevious move the selection by one through the
+// catalog's native order (alphabetical, per songs.LoadFile; Default
+// excluded, same as the phone's song list) — wrapping at either end. If
+// nothing is selected yet, SelectNext starts at the first real song and
+// SelectPrevious at the last. Built for the foot pedal, which has no
+// song-list UI of its own to pick from directly; always allowed, same as
+// SelectSong.
+func (c *Controller) SelectNext() error {
+	return c.selectRelative(1)
+}
+
+func (c *Controller) SelectPrevious() error {
+	return c.selectRelative(-1)
+}
+
+func (c *Controller) selectRelative(delta int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var order []*songs.Song
+	for _, s := range c.catalog {
+		if s.ID != slideshow.DefaultID {
+			order = append(order, s)
+		}
+	}
+	if len(order) == 0 {
+		return fmt.Errorf("no songs in catalog")
+	}
+
+	idx := -1
+	if c.selected != nil {
+		for i, s := range order {
+			if s.ID == c.selected.ID {
+				idx = i
+				break
+			}
+		}
+	}
+
+	var next int
+	if idx == -1 {
+		if delta > 0 {
+			next = 0
+		} else {
+			next = len(order) - 1
+		}
+	} else {
+		next = ((idx+delta)%len(order) + len(order)) % len(order)
+	}
+
+	c.selected = order[next]
+	c.lastErr = ""
+	return nil
+}
+
+// StartDefault selects the Default entry and starts it in one call — built
+// specifically for the foot pedal, which fires one shell command per key
+// press and can't sequence two separate API calls the way the phone's
+// Default button does (select, then start, as two awaited fetches).
+func (c *Controller) StartDefault() error {
+	if err := c.SelectSong(slideshow.DefaultID); err != nil {
+		return err
+	}
+	return c.Start()
+}
+
 // Start makes the selected song the one playing: its click (unless muted)
 // and its slide display. If a different song is already playing, that
 // song's click is stopped first — a live transition, not an error. Calling
