@@ -7,27 +7,14 @@
 # physically in pairing mode, which can't be scripted.
 MAC="25:FA:C2:54:4A:62"   # from `bluetoothctl devices`
 
-# A BLE reconnect (including one that happened on its own, before this script
-# ever ran) tears down the old /dev/input/eventN node and creates a new one.
-# triggerhappy's systemd unit globs device files once at startup and never
-# re-checks, so it's left reading a dead fd forever until restarted — this
-# restart is what makes it pick up whatever device node is current right now.
-restart_triggerhappy() {
-    sudo systemctl restart triggerhappy 2>/dev/null || true
-}
-
 if bluetoothctl info "$MAC" 2>/dev/null | grep -q "Connected: yes"; then
     echo "Pedal already connected."
-    restart_triggerhappy
     exit 0
 fi
 
 echo "Pedal not connected — retrying..."
 for i in 1 2 3 4 5; do
-    if bluetoothctl connect "$MAC"; then
-        restart_triggerhappy
-        exit 0
-    fi
+    bluetoothctl connect "$MAC" && exit 0
     sleep 2
 done
 

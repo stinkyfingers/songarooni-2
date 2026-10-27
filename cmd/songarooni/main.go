@@ -18,6 +18,7 @@ import (
 	"songarooni/internal/click"
 	"songarooni/internal/config"
 	"songarooni/internal/httpapi"
+	"songarooni/internal/pedal"
 	"songarooni/internal/slideshow"
 	"songarooni/internal/songs"
 	"songarooni/internal/state"
@@ -71,6 +72,8 @@ func main() {
 			log.Fatalf("server failed: %v", err)
 		}
 	}()
+
+	go pedal.ListenStdin(ctx, controller)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
