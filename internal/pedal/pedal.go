@@ -39,7 +39,23 @@ const (
 	keyCR    = '\r'
 	keyLF    = '\n'
 	keyEsc   = 0x1b
+	keyCtrlC = 0x03 // ETX
 )
+
+// interruptSelf re-raises Ctrl+C as a real SIGINT. Raw mode (see
+// ListenStdin) disables the terminal's own INTR handling as a side effect —
+// without this, Ctrl+C typed into that terminal would do nothing at all,
+// since the TTY driver never turns it into a signal while ISIG is off. This
+// hands it back to the existing main.go shutdown path unchanged (it already
+// does signal.Notify(stop, os.Interrupt, ...)). A var so tests can swap it
+// out rather than actually signaling the test process.
+var interruptSelf = func() {
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		return
+	}
+	_ = p.Signal(os.Interrupt)
+}
 
 // ListenStdin puts stdin into raw mode and runs the pedal listener against
 // it until ctx is done or stdin closes. If stdin isn't a real terminal (e.g.
@@ -96,6 +112,8 @@ func Run(r io.Reader, c Controller) error {
 			logErr("Start", c.Start())
 		case keyEsc:
 			handleEscape(br, c)
+		case keyCtrlC:
+			interruptSelf()
 		}
 	}
 }

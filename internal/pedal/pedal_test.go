@@ -80,3 +80,21 @@ func TestRunStopsCleanlyAtEOF(t *testing.T) {
 		t.Fatalf("expected EOF to be treated as a clean exit, got %v", err)
 	}
 }
+
+// Raw mode disables the terminal's own Ctrl+C-to-SIGINT handling, so Run
+// must re-raise it itself. Swap out interruptSelf rather than letting this
+// actually signal the test process.
+func TestRunReRaisesCtrlCAsInterrupt(t *testing.T) {
+	orig := interruptSelf
+	defer func() { interruptSelf = orig }()
+
+	called := false
+	interruptSelf = func() { called = true }
+
+	if err := Run(strings.NewReader("\x03"), &fakeController{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !called {
+		t.Fatal("expected Ctrl+C to call interruptSelf")
+	}
+}

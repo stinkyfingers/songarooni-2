@@ -105,7 +105,7 @@ function renderList() {
 
     info.textContent = song.id === DEFAULT_SONG_ID ?
       '' :
-      `${song?.extra?.artist} - ${song?.extra?.genre}`;
+      `${song?.extra?.artist} - ${song?.extra?.genre}${song.hasImages ? '' : ' (no images)'}`.trim();
     li.appendChild(title);
     li.appendChild(info);
 

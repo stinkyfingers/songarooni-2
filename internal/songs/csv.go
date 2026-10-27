@@ -121,7 +121,7 @@ func LoadFile(path, slideDir string) (songList []Song, extraFields []string, err
 			// (click included) over it. slideshow.go already falls back to
 			// the "default" deck at runtime when a song's directory isn't
 			// there.
-			log.Printf("songs: line %d (%s): %s — will fall back to the default slide deck at runtime", line, title, err)
+			log.Printf("songs: line %d (%s): %s", line, title, err)
 			hasImages = false
 		}
 
