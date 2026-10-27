@@ -10,12 +10,18 @@ make build-pi   # cross-compile for the Pi (aarch64, no CGO/Docker needed)
 make test
 ```
 
-On the Pi:
+Deploy the whole app bundle (binary, songs, every `scripts/` file `start.sh` depends on, and `config.prod.yaml` — renamed to `config.yaml` on the Pi) in one shot:
 
 ```
-scp dist/songarooni config.yaml songs.csv pi@<host>:~/songarooni/
-scp -r media/ pi@<host>:~/songarooni/
-./songarooni        # or scripts/run.sh — started by hand, no systemd (see plans/initial-plan.md Phase 6)
+make deploy HOST=admin@<host>   # defaults to admin@songarooni.local if omitted
+```
+
+`config.prod.yaml` is gitignored and machine-local — it holds this Pi's actual hardware settings (its USB slide directory, real audio device, etc.), separate from the plain `config.yaml` in this repo, which is a Mac-side dev/test config and must never be deployed. Slide images themselves aren't part of this — they're copied onto the Pi by hand over USB.
+
+Then on the Pi itself:
+
+```
+./start.sh        # or scripts/run.sh — started by hand, no systemd (see plans/initial-plan.md Phase 6)
 ```
 
 See `plans/cross-compile-plan.md` for the full build/provisioning walkthrough, including installing `feh` and `alsa-utils` on the Pi.
@@ -90,7 +96,33 @@ A couple of things worth knowing going in:
 - iOS will warn that `BandControl` has no internet connection. That's expected and harmless — the phone can still reach the Pi's site; just confirm Safari actually stays connected to it during a real set rather than switching to cellular.
 
 
-### Configuring Chocolate Foot pedal
+## One-time Pi setup: M-Vave Chocolate foot pedal
 
-- Copy scripts/chocolate.conf to /etc/triggerhappy/triggers.d/ on PI
-- `sudo systemctl restart triggerhappy`
+Everything below installs into system paths outside the app directory and only needs doing once per Pi (not on every `make deploy`). See `plans/pedal-connection-plan.md` for the full rationale.
+
+1. **Pair and trust the pedal** with the Pi over Bluetooth first (`bluetoothctl` — scan, pair, trust), if you haven't already.
+
+2. **Make the Bluetooth adapter survive a reboot** — without this, a trusted pedal still won't auto-reconnect after a power-cycle because the adapter itself never powers back on:
+   ```bash
+   sudo tee -a /etc/bluetooth/main.conf > /dev/null << 'EOF'
+   [Policy]
+   AutoEnable=true
+   EOF
+   sudo systemctl restart bluetooth
+   ```
+
+3. **Install the triggerhappy rules that turn pedal presses into API calls**:
+   ```bash
+   sudo cp scripts/chocolate.conf /etc/triggerhappy/triggers.d/
+   sudo systemctl restart triggerhappy
+   ```
+
+4. **Allow `connect-pedal.sh` to restart triggerhappy without a password prompt.** A BLE reconnect tears down and recreates the pedal's `/dev/input/eventN` node; triggerhappy only reads devices it saw at its own startup, so `connect-pedal.sh` restarts it on every show start to pick up whatever node is current. That needs passwordless sudo for this one command, confirmed by `which systemctl` first (usually `/usr/bin/systemctl` or `/bin/systemctl` on Raspberry Pi OS):
+   ```bash
+   echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart triggerhappy" | sudo tee /etc/sudoers.d/songarooni-triggerhappy
+   sudo chmod 440 /etc/sudoers.d/songarooni-triggerhappy
+   ```
+
+5. **Fill in the pedal's real MAC address** in `scripts/connect-pedal.sh` (`bluetoothctl devices` to find it) before the next `make deploy`.
+
+From here on, every show start (`start.sh`) reconnects the pedal if needed, restarts triggerhappy to match, and unbinds feh's own Space/Enter/Page Up/Page Down handling so the pedal only ever drives the app, not feh's slideshow navigation too.

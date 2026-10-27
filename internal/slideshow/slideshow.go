@@ -17,6 +17,8 @@ import (
 var (
 	//go:embed logo.png
 	embeddedLogo []byte
+
+	reloadInterval = 2 // seconds; deliberately offset from -D so feh reloads after the next slide change, not before
 )
 
 // DefaultID is the sentinel song id that selects the "default" subdirectory
@@ -193,7 +195,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 		"-F",                                // fullscreen
 		"-Z",                                // auto-zoom
 		"-D", fmt.Sprintf("%d", s.interval), // slide delay
-		"-R", fmt.Sprintf("%d", s.interval+1), // reload, deliberately offset from -D — see above
+		"-R", fmt.Sprintf("%d", reloadInterval), // reload interval
 		"--hide-pointer", // hide mouse cursor
 		"--quiet",        // suppress warnings
 		"-f", path,       // directory to watch

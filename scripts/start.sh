@@ -37,6 +37,11 @@ if [ -x ./connect-pedal.sh ]; then
 	./connect-pedal.sh || true
 fi
 
+# unbind key commands for feh from the ones the pedal uses, so the pedal doesn't accidentally trigger feh's slideshow controls
+if [ -x ./unbind-feh-keys.sh ]; then
+	./unbind-feh-keys.sh || true
+fi
+
 # If config.yaml's addr uses a privileged port (<1024, e.g. :80), the binary
 # needs cap_net_bind_service to bind it without running as root — see
 # README.md. Only ever asks for a password once: skipped entirely once
