@@ -111,18 +111,6 @@ Everything below installs into system paths outside the app directory and only n
    sudo systemctl restart bluetooth
    ```
 
-3. **Install the triggerhappy rules that turn pedal presses into API calls**:
-   ```bash
-   sudo cp scripts/chocolate.conf /etc/triggerhappy/triggers.d/
-   sudo systemctl restart triggerhappy
-   ```
+3. **Fill in the pedal's real MAC address** in `scripts/connect-pedal.sh` (`bluetoothctl devices` to find it) before the next `make deploy`.
 
-4. **Allow `connect-pedal.sh` to restart triggerhappy without a password prompt.** A BLE reconnect tears down and recreates the pedal's `/dev/input/eventN` node; triggerhappy only reads devices it saw at its own startup, so `connect-pedal.sh` restarts it on every show start to pick up whatever node is current. That needs passwordless sudo for this one command, confirmed by `which systemctl` first (usually `/usr/bin/systemctl` or `/bin/systemctl` on Raspberry Pi OS):
-   ```bash
-   echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart triggerhappy" | sudo tee /etc/sudoers.d/songarooni-triggerhappy
-   sudo chmod 440 /etc/sudoers.d/songarooni-triggerhappy
-   ```
-
-5. **Fill in the pedal's real MAC address** in `scripts/connect-pedal.sh` (`bluetoothctl devices` to find it) before the next `make deploy`.
-
-From here on, every show start (`start.sh`) reconnects the pedal if needed, restarts triggerhappy to match, and unbinds feh's own Space/Enter/Page Up/Page Down handling so the pedal only ever drives the app, not feh's slideshow navigation too.
+That's it — pedal keystrokes aren't handled by `triggerhappy` (tried first, but it only ever reads the device files it saw at its own startup; a Bluetooth reconnect mid-show recreates `/dev/input/eventN` under a new number and silently deafens it with no way to recover short of a restart). Instead, `songarooni` itself reads the keystrokes straight from the terminal `start.sh` runs it in (see `internal/pedal`) — immune to that renumbering, since the kernel's TTY layer delivers input to whichever process has the terminal in the foreground regardless of which device produced it. From here on, every show start (`start.sh`) just reconnects the pedal if needed and unbinds feh's own Space/Enter/Page Up/Page Down handling, so the pedal only ever drives the app, not feh's slideshow navigation too.
