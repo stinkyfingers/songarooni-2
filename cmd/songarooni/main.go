@@ -73,7 +73,7 @@ func main() {
 		}
 	}()
 
-	go pedal.ListenStdin(ctx, controller)
+	go pedal.Watch(ctx, cfg.PedalDeviceName, controller)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

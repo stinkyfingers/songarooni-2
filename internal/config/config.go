@@ -22,6 +22,13 @@ type Config struct {
 	ClickFrequency       float64  `yaml:"click_frequency"`        // click tone frequency in Hz, e.g. 1800
 	LogFile              string   `yaml:"log_file"`               // path to the truncated-on-startup log file
 	DisplayedFields      []string `yaml:"displayed_fields"`       // which extra songs.csv columns to show in the phone's song list (empty: none)
+
+	// PedalDeviceName is matched case-insensitively against each /dev/input
+	// device's name (via EVIOCGNAME) to find the M-Vave Chocolate foot
+	// pedal — see internal/pedal. "Chocolate" is a best guess, not a
+	// confirmed value; if the pedal isn't found, check its real name with
+	// `cat /proc/bus/input/devices` on the Pi and set this to match.
+	PedalDeviceName string `yaml:"pedal_device_name"`
 }
 
 func defaults() Config {
@@ -36,6 +43,7 @@ func defaults() Config {
 		ClickVolume:          1.0,
 		ClickFrequency:       1800,
 		LogFile:              "songarooni.log",
+		PedalDeviceName:      "FootCtrlPlus Keyboard",
 	}
 }
 

@@ -1,8 +1,10 @@
 package pedal
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
-	"strings"
+	"io"
 	"testing"
 )
 
@@ -11,7 +13,10 @@ type fakeController struct {
 	err   error // returned from every call, to test error logging doesn't stop the loop
 }
 
-func (f *fakeController) SelectNext() error { f.calls = append(f.calls, "SelectNext"); return f.err }
+func (f *fakeController) SelectNext() error {
+	f.calls = append(f.calls, "SelectNext")
+	return f.err
+}
 func (f *fakeController) SelectPrevious() error {
 	f.calls = append(f.calls, "SelectPrevious")
 	return f.err
@@ -22,18 +27,35 @@ func (f *fakeController) StartDefault() error {
 	return f.err
 }
 
-func TestRunDispatchesEachKey(t *testing.T) {
-	// Space, Enter (CR), Page Up (ESC [ 5 ~), Page Down (ESC [ 6 ~), and a
-	// line-feed Enter variant, all in one stream — mirrors how the pedal's
-	// keys actually arrive, byte for byte.
-	input := " \r\x1b[5~\x1b[6~\n"
-	c := &fakeController{}
+// rawEvent builds one raw 24-byte input_event record: a 16-byte timeval
+// (ignored by readEvents, so left zeroed), type, code, value.
+func rawEvent(typ, code uint16, value int32) []byte {
+	buf := make([]byte, eventSize)
+	binary.LittleEndian.PutUint16(buf[16:18], typ)
+	binary.LittleEndian.PutUint16(buf[18:20], code)
+	binary.LittleEndian.PutUint32(buf[20:24], uint32(value))
+	return buf
+}
 
-	if err := Run(strings.NewReader(input), c); err != nil {
-		t.Fatalf("Run: %v", err)
+func keyPress(code uint16) []byte   { return rawEvent(evKey, code, 1) }
+func keyRelease(code uint16) []byte { return rawEvent(evKey, code, 0) }
+func keyRepeat(code uint16) []byte  { return rawEvent(evKey, code, 2) }
+
+func TestReadEventsDispatchesEachKeyOnPressOnly(t *testing.T) {
+	var buf bytes.Buffer
+	buf.Write(keyPress(keySpace))
+	buf.Write(keyRelease(keySpace)) // must be ignored
+	buf.Write(keyPress(keyEnter))
+	buf.Write(keyRepeat(keyEnter)) // must be ignored
+	buf.Write(keyPress(keyPageUp))
+	buf.Write(keyPress(keyPageDown))
+
+	c := &fakeController{}
+	if err := readEvents(&buf, c); err != io.ErrUnexpectedEOF && err != io.EOF {
+		t.Fatalf("readEvents: %v", err)
 	}
 
-	want := []string{"StartDefault", "Start", "SelectPrevious", "SelectNext", "Start"}
+	want := []string{"StartDefault", "Start", "SelectPrevious", "SelectNext"}
 	if len(c.calls) != len(want) {
 		t.Fatalf("expected calls %v, got %v", want, c.calls)
 	}
@@ -44,57 +66,37 @@ func TestRunDispatchesEachKey(t *testing.T) {
 	}
 }
 
-func TestRunIgnoresUnrelatedEscapeSequences(t *testing.T) {
-	// Arrow keys (ESC [ A) and Home (ESC [ H) aren't pedal keys — must be
-	// drained without dispatching anything and without getting the parser
-	// stuck, so the next real key still works.
-	input := "\x1b[A\x1b[H \n"
+func TestReadEventsIgnoresNonKeyAndUnrelatedCodes(t *testing.T) {
+	var buf bytes.Buffer
+	buf.Write(rawEvent(0x02 /* EV_REL, mouse movement */, 0, 5))
+	buf.Write(keyPress(30)) // KEY_A — not a pedal key
+	buf.Write(keyPress(keySpace))
+
 	c := &fakeController{}
+	_ = readEvents(&buf, c)
 
-	if err := Run(strings.NewReader(input), c); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	want := []string{"StartDefault", "Start"}
-	if len(c.calls) != len(want) {
-		t.Fatalf("expected only %v (arrow/home ignored), got %v", want, c.calls)
+	if len(c.calls) != 1 || c.calls[0] != "StartDefault" {
+		t.Fatalf("expected only StartDefault, got %v", c.calls)
 	}
 }
 
-func TestRunDoesNotStopOnControllerError(t *testing.T) {
-	// A rejected call (e.g. Start() with nothing selected) must not stop the
-	// pedal from handling the next keypress.
-	c := &fakeController{err: errors.New("no song selected")}
-	input := "\r \r"
+func TestReadEventsDoesNotStopOnControllerError(t *testing.T) {
+	var buf bytes.Buffer
+	buf.Write(keyPress(keyEnter))
+	buf.Write(keyPress(keySpace))
+	buf.Write(keyPress(keyEnter))
 
-	if err := Run(strings.NewReader(input), c); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+	c := &fakeController{err: errors.New("no song selected")}
+	_ = readEvents(&buf, c)
+
 	if len(c.calls) != 3 {
 		t.Fatalf("expected all 3 keys to still be dispatched despite errors, got %v", c.calls)
 	}
 }
 
-func TestRunStopsCleanlyAtEOF(t *testing.T) {
-	if err := Run(strings.NewReader(""), &fakeController{}); err != nil {
-		t.Fatalf("expected EOF to be treated as a clean exit, got %v", err)
-	}
-}
-
-// Raw mode disables the terminal's own Ctrl+C-to-SIGINT handling, so Run
-// must re-raise it itself. Swap out interruptSelf rather than letting this
-// actually signal the test process.
-func TestRunReRaisesCtrlCAsInterrupt(t *testing.T) {
-	orig := interruptSelf
-	defer func() { interruptSelf = orig }()
-
-	called := false
-	interruptSelf = func() { called = true }
-
-	if err := Run(strings.NewReader("\x03"), &fakeController{}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !called {
-		t.Fatal("expected Ctrl+C to call interruptSelf")
+func TestReadEventsStopsAtEOF(t *testing.T) {
+	err := readEvents(bytes.NewReader(nil), &fakeController{})
+	if err == nil {
+		t.Fatal("expected an error (EOF) from an empty reader")
 	}
 }

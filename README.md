@@ -113,4 +113,16 @@ Everything below installs into system paths outside the app directory and only n
 
 3. **Fill in the pedal's real MAC address** in `scripts/connect-pedal.sh` (`bluetoothctl devices` to find it) before the next `make deploy`.
 
-That's it — pedal keystrokes aren't handled by `triggerhappy` (tried first, but it only ever reads the device files it saw at its own startup; a Bluetooth reconnect mid-show recreates `/dev/input/eventN` under a new number and silently deafens it with no way to recover short of a restart). Instead, `songarooni` itself reads the keystrokes straight from the terminal `start.sh` runs it in (see `internal/pedal`) — immune to that renumbering, since the kernel's TTY layer delivers input to whichever process has the terminal in the foreground regardless of which device produced it. From here on, every show start (`start.sh`) just reconnects the pedal if needed and unbinds feh's own Space/Enter/Page Up/Page Down handling, so the pedal only ever drives the app, not feh's slideshow navigation too.
+4. **Put the Pi user in the `input` group**, so `songarooni` itself can read `/dev/input/eventN` directly without running as root:
+   ```bash
+   sudo usermod -aG input "$(whoami)"
+   ```
+   Log out and back in (or reboot) for the group change to take effect.
+
+5. **Confirm `config.prod.yaml`'s `pedal_device_name` actually matches the pedal.** It defaults to `"Chocolate"` — a best guess, not a confirmed value. Check the real name once the pedal is connected:
+   ```bash
+   cat /proc/bus/input/devices
+   ```
+   Look for the `N: Name=` line that isn't your mouse/keyboard, and set `pedal_device_name` in `config.prod.yaml` to match (a substring is fine — the match is case-insensitive `contains`, not exact).
+
+That's it — pedal keystrokes aren't handled by `triggerhappy` or read from a terminal (both tried first; see `plans/pedal-connection-plan.md` for why each one broke). Instead, `songarooni` itself reads the pedal's raw Linux evdev device directly (see `internal/pedal`) and re-finds it automatically if reading ever fails (e.g. after a Bluetooth reconnect recreates the device node mid-show) — unlike `triggerhappy`, which only ever opens the device files it saw at its own startup and never recovers from that on its own. From here on, every show start (`start.sh`) just reconnects the pedal if needed and unbinds feh's own Space/Enter/Page Up/Page Down handling, so the pedal only ever drives the app, not feh's slideshow navigation too.

@@ -1,28 +1,31 @@
 // Package pedal reads the M-Vave Chocolate foot pedal's keystrokes directly
-// from the controlling terminal, translating them into Controller calls —
-// the same ones the phone's buttons make. This bypasses triggerhappy
-// entirely: the kernel's TTY layer delivers keystrokes to whichever process
-// has the terminal in the foreground regardless of which specific
-// /dev/input/eventN produced them, so unlike triggerhappy's raw evdev reads,
-// it's immune to the device renumbering a Bluetooth reconnect causes
-// mid-show (see plans/pedal-connection-plan.md for the full history).
+// from its Linux evdev device (/dev/input/eventN), translating them into
+// Controller calls — the same ones the phone's buttons make.
+//
+// This reads at the kernel input-subsystem level rather than from a
+// terminal or triggerhappy, deliberately: a terminal only receives
+// keystrokes while it holds OS-level input focus, which feh's own fullscreen
+// slideshow window takes away the moment it's running (the same reason
+// unbind-feh-keys.sh is needed at all) — so a stdin-based approach, tried
+// first, never actually saw pedal input once feh was up. triggerhappy reads
+// at this same evdev level and doesn't have that focus problem, but it only
+// ever opens the device files it saw at its own startup and never notices a
+// new one appearing after a Bluetooth reconnect mid-show. Watch (see
+// evdev_linux.go) fixes that by re-finding and reopening the device
+// whenever reading from it fails. See plans/pedal-connection-plan.md for
+// the full history.
 package pedal
 
 import (
-	"bufio"
-	"context"
-	"errors"
+	"encoding/binary"
 	"io"
 	"log"
-	"os"
-
-	"golang.org/x/term"
 )
 
 // Controller is the subset of state.Controller's methods the pedal drives.
-// A narrow interface rather than *state.Controller directly, so the parsing
-// logic below can be tested without a real Controller (clicker, display,
-// catalog and all).
+// A narrow interface rather than *state.Controller directly, so the
+// parsing logic below can be tested without a real Controller (clicker,
+// display, catalog and all).
 type Controller interface {
 	SelectNext() error
 	SelectPrevious() error
@@ -30,127 +33,58 @@ type Controller interface {
 	StartDefault() error
 }
 
-// Keys the pedal is wired to send (see plans/pedal-connection-plan.md Part
-// 3): Page Up/Down move the selection, Enter starts whatever's selected,
-// Space selects-and-starts Default. Stop is deliberately not bound here —
-// it's UI-only, from the phone.
+// Linux evdev's input_event layout on 64-bit kernels (the only target this
+// app cross-compiles for — see Makefile's build-pi): a 16-byte timeval
+// followed by type (uint16), code (uint16), and value (int32); 24 bytes
+// total, fixed by the kernel ABI (see <linux/input.h>).
+const eventSize = 24
+
+const evKey = 0x01 // EV_KEY, from <linux/input-event-codes.h>
+
+// Key codes (see <linux/input-event-codes.h>) for the four keys the pedal
+// is wired to send (plans/pedal-connection-plan.md Part 3): Page Up/Down
+// move the selection, Enter starts whatever's selected, Space
+// selects-and-starts Default. Stop is deliberately not bound here — it's
+// UI-only, from the phone.
 const (
-	keySpace = ' '
-	keyCR    = '\r'
-	keyLF    = '\n'
-	keyEsc   = 0x1b
-	keyCtrlC = 0x03 // ETX
+	keyEnter    = 28
+	keySpace    = 57
+	keyPageUp   = 104
+	keyPageDown = 109
 )
 
-// interruptSelf re-raises Ctrl+C as a real SIGINT. Raw mode (see
-// ListenStdin) disables the terminal's own INTR handling as a side effect —
-// without this, Ctrl+C typed into that terminal would do nothing at all,
-// since the TTY driver never turns it into a signal while ISIG is off. This
-// hands it back to the existing main.go shutdown path unchanged (it already
-// does signal.Notify(stop, os.Interrupt, ...)). A var so tests can swap it
-// out rather than actually signaling the test process.
-var interruptSelf = func() {
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		return
-	}
-	_ = p.Signal(os.Interrupt)
-}
-
-// ListenStdin puts stdin into raw mode and runs the pedal listener against
-// it until ctx is done or stdin closes. If stdin isn't a real terminal (e.g.
-// a future headless setup with stdin redirected), it logs that and returns
-// immediately — the phone's HTTP control keeps working either way.
-func ListenStdin(ctx context.Context, c Controller) {
-	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
-		log.Println("pedal: stdin is not a terminal; foot pedal input disabled (the phone still works)")
-		return
-	}
-
-	oldState, err := term.MakeRaw(fd)
-	if err != nil {
-		log.Printf("pedal: failed to set stdin to raw mode; foot pedal input disabled: %v", err)
-		return
-	}
-	defer func() {
-		if err := term.Restore(fd, oldState); err != nil {
-			log.Printf("pedal: failed to restore terminal state: %v", err)
-		}
-	}()
-
-	go func() {
-		<-ctx.Done()
-		os.Stdin.Close() // unblocks the Read loop below on shutdown
-	}()
-
-	if err := Run(os.Stdin, c); err != nil {
-		log.Printf("pedal: stdin listener exited: %v", err)
-	}
-}
-
-// Run reads r until it returns an error (including io.EOF, which Run treats
-// as a clean exit, not a failure) and calls the matching Controller method
-// for each recognized key. Errors from the Controller itself are logged,
-// not returned — a rejected call (e.g. Start() with nothing selected)
-// shouldn't stop the pedal from working on the next keypress.
-func Run(r io.Reader, c Controller) error {
-	br := bufio.NewReader(r)
+// readEvents reads raw input_event records from r until it returns an
+// error (including io.EOF) and calls the matching Controller method for
+// each EV_KEY press (value == 1; releases and autorepeat are ignored).
+// Errors from the Controller itself are logged, not returned — a rejected
+// call (e.g. Start() with nothing selected) shouldn't stop the pedal from
+// working on the next keypress.
+func readEvents(r io.Reader, c Controller) error {
+	buf := make([]byte, eventSize)
 	for {
-		b, err := br.ReadByte()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
+		if _, err := io.ReadFull(r, buf); err != nil {
 			return err
 		}
 
-		switch b {
+		typ := binary.LittleEndian.Uint16(buf[16:18])
+		if typ != evKey {
+			continue
+		}
+		value := int32(binary.LittleEndian.Uint32(buf[20:24]))
+		if value != 1 {
+			continue
+		}
+		code := binary.LittleEndian.Uint16(buf[18:20])
+
+		switch code {
 		case keySpace:
 			logErr("StartDefault", c.StartDefault())
-		case keyCR, keyLF:
+		case keyEnter:
 			logErr("Start", c.Start())
-		case keyEsc:
-			handleEscape(br, c)
-		case keyCtrlC:
-			interruptSelf()
-		}
-	}
-}
-
-// handleEscape reads the rest of a CSI escape sequence (ESC [ params
-// final-byte) and dispatches Page Up (ESC [ 5 ~) / Page Down (ESC [ 6 ~);
-// anything else (arrow keys, Home/End, etc.) is drained and ignored.
-// Malformed or unexpected bytes just stop processing this sequence rather
-// than blocking — a mis-synced read here must never hang the pedal listener
-// waiting for bytes that aren't coming.
-func handleEscape(br *bufio.Reader, c Controller) {
-	b, err := br.ReadByte()
-	if err != nil || b != '[' {
-		return
-	}
-
-	var params []byte
-	for {
-		b, err := br.ReadByte()
-		if err != nil {
-			return
-		}
-		switch {
-		case b >= 0x30 && b <= 0x3f: // parameter byte, e.g. the "5" in ESC [ 5 ~
-			params = append(params, b)
-		case b >= 0x40 && b <= 0x7e: // final byte — sequence complete
-			if b == '~' && len(params) == 1 {
-				switch params[0] {
-				case '5':
-					logErr("SelectPrevious", c.SelectPrevious())
-				case '6':
-					logErr("SelectNext", c.SelectNext())
-				}
-			}
-			return
-		default: // intermediate byte or garbage — not a sequence we care about
-			return
+		case keyPageUp:
+			logErr("SelectPrevious", c.SelectPrevious())
+		case keyPageDown:
+			logErr("SelectNext", c.SelectNext())
 		}
 	}
 }
