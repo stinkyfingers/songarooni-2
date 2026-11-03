@@ -45,7 +45,7 @@ type Deck struct {
 }
 
 var supportedImageExts = map[string]bool{
-	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, "mp4": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
 }
 
 // Resolve picks id's slide deck: LogoID is just the logo on its own;
