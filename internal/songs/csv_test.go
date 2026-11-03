@@ -25,7 +25,7 @@ func TestLoadFileValid(t *testing.T) {
 	writeSlideDir(t, slideDir, "song-one")
 
 	csvPath := filepath.Join(dir, "songs.csv")
-	csv := "id,title,slides,tempo\n1,Song One,song-one,120\n"
+	csv := "id,title,slides,tempo,format\n1,Song One,song-one,120,image\n"
 	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestLoadFileExtraFields(t *testing.T) {
 	writeSlideDir(t, slideDir, "song-one")
 
 	csvPath := filepath.Join(dir, "songs.csv")
-	csv := "id,title,slides,tempo,Artist,Year\n1,Song One,song-one,120,The Band,1969\n"
+	csv := "id,title,slides,tempo,format,Artist,Year\n1,Song One,song-one,120,image,The Band,1969\n"
 	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestLoadFileRejectsDuplicateIDs(t *testing.T) {
 	writeSlideDir(t, slideDir, "song-two")
 
 	csvPath := filepath.Join(dir, "songs.csv")
-	csv := "id,title,slides,tempo\n1,Song One,song-one,120\n1,Song Two,song-two,100\n"
+	csv := "id,title,slides,tempo,format\n1,Song One,song-one,120,image\n1,Song Two,song-two,100,image\n"
 	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestLoadFileToleratesMissingSlideDir(t *testing.T) {
 	}
 
 	csvPath := filepath.Join(dir, "songs.csv")
-	csv := "id,title,slides,tempo\n1,Song One,does-not-exist,120\n"
+	csv := "id,title,slides,tempo,format\n1,Song One,does-not-exist,120,image\n"
 	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -128,10 +128,10 @@ func TestLoadFileSortsAlphabeticallyByTitle(t *testing.T) {
 	writeSlideDir(t, slideDir, "honky-tonk")
 
 	csvPath := filepath.Join(dir, "songs.csv")
-	csv := "id,title,slides,tempo\n" +
-		"1,Zebra,zebra,120\n" +
-		"2,american girl,american-girl,110\n" +
-		"3,Honky Tonk,honky-tonk,118\n"
+	csv := "id,title,slides,tempo,format\n" +
+		"1,Zebra,zebra,120,image\n" +
+		"2,american girl,american-girl,110,image\n" +
+		"3,Honky Tonk,honky-tonk,118,image\n"
 	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestLoadFileRejectsBadTempo(t *testing.T) {
 	writeSlideDir(t, slideDir, "song-one")
 
 	csvPath := filepath.Join(dir, "songs.csv")
-	csv := "id,title,slides,tempo\n1,Song One,song-one,0\n"
+	csv := "id,title,slides,tempo,format\n1,Song One,song-one,0,image\n"
 	if err := os.WriteFile(csvPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}

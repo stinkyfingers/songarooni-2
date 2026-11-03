@@ -9,21 +9,19 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
+
+	control_panel "songarooni/internal/control-panel"
 
 	"songarooni/internal/click"
 	"songarooni/internal/config"
-	"songarooni/internal/httpapi"
 	"songarooni/internal/pedal"
 	"songarooni/internal/slideshow"
 	"songarooni/internal/songs"
 	"songarooni/internal/state"
-
-	webassets "songarooni"
 )
 
 func main() {
@@ -60,16 +58,9 @@ func main() {
 	clicker := click.New(cfg.AudioDevice, clampVolume(cfg.ClickVolume), cfg.ClickFrequency)
 	controller := state.New(catalog, clicker, display)
 
-	mux := http.NewServeMux()
-	mux.Handle("/api/", httpapi.Handler(controller, extraFields, displayedFields))
-	mux.Handle("/", noCache(http.FileServerFS(webassets.FS)))
-
-	server := &http.Server{Addr: cfg.Addr, Handler: mux}
-
 	go func() {
-		log.Printf("listening on %s", cfg.Addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server failed: %v", err)
+		if err := control_panel.Run(ctx, cfg.Addr, controller, extraFields, displayedFields); err != nil && ctx.Err() == nil {
+			log.Fatalf("control panel failed: %v", err)
 		}
 	}()
 
@@ -82,39 +73,40 @@ func main() {
 	log.Println("shutting down")
 	_ = controller.Stop() // stop makes sure the click dies with the process, not just HTTP
 	cancel()
-	_ = server.Shutdown(context.Background())
 }
 
-// buildDisplay runs the real feh-backed Slideshow if feh is on PATH, or a
-// logging no-op otherwise — e.g. on a Mac used for development, per
-// initial-plan.md Phase 1's "keep hardware-specific operations behind small
-// interfaces" guidance.
+// buildDisplay starts the slideshow kiosk server and launches a kiosk
+// browser pointed at it. The Controller's Display stays a no-op: the kiosk
+// page figures out what to show by polling the control panel's /api/state
+// itself (see plans/browser-slideshow-plan.md) rather than the Go side
+// pushing to it.
 func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) state.Display {
-	if _, err := exec.LookPath("feh"); err != nil {
-		log.Printf("display: feh not found on PATH; using a no-op display (%v)", err)
-		return noopDisplay{}
-	}
-
 	songMap := make(map[int]string, len(catalog))
 	for _, s := range catalog {
 		songMap[s.ID] = s.Slides
 	}
 
-	show, err := slideshow.New(cfg.SlideDir, cfg.DefaultSlideshow, songMap, cfg.LogoFrequency, cfg.SlideIntervalSeconds)
-	if err != nil {
-		// A slides-only problem (e.g. a bad slide_dir) must not take the
-		// click and the rest of the app down with it — fall back to the
-		// same no-op used when feh itself is missing.
-		log.Printf("display: %v; using a no-op display (click still works)", err)
-		return noopDisplay{}
-	}
+	// cfg.Addr is always a bare ":PORT" in this app (see config.yaml's own
+	// examples) — no host ever configured — so the control panel's port is
+	// just whatever follows that one leading colon.
+	apiPort := strings.TrimPrefix(cfg.Addr, ":")
+
+	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, cfg.DefaultSlideshow, songMap, cfg.LogoFrequency, cfg.SlideIntervalSeconds, apiPort)
 	go func() {
 		if err := show.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("display: Run exited: %v", err)
+			log.Printf("slideshow: Run exited: %v", err)
 		}
 	}()
-	show.Start()
-	return show
+
+	kioskPort := strings.TrimPrefix(cfg.BrowserSlideshowAddr, ":")
+	kioskURL := fmt.Sprintf("http://localhost:%s/", kioskPort)
+	go func() {
+		if err := slideshow.LaunchKiosk(ctx, kioskURL, cfg.BrowserCommand, cfg.NoKiosk); err != nil && ctx.Err() == nil {
+			log.Printf("slideshow: kiosk browser: %v", err)
+		}
+	}()
+
+	return noopDisplay{}
 }
 
 // clampVolume keeps a misconfigured click_volume (negative, or above 1) from
@@ -150,18 +142,6 @@ func validDisplayedFields(configured, extraFields []string) []string {
 		}
 	}
 	return out
-}
-
-// noCache stops the browser from caching the control page's static assets.
-// This is a small, locally-served app under active development — serving a
-// stale cached app.js against a server whose API shape has since changed
-// (as happened across this session's field renames) is a worse failure mode
-// than re-fetching a few KB on every load.
-func noCache(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
 }
 
 type noopDisplay struct{}

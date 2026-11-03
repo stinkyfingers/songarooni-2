@@ -24,7 +24,7 @@ Then on the Pi itself:
 ./start.sh        # or scripts/run.sh — started by hand, no systemd (see plans/initial-plan.md Phase 6)
 ```
 
-See `plans/cross-compile-plan.md` for the full build/provisioning walkthrough, including installing `feh` and `alsa-utils` on the Pi.
+See `plans/cross-compile-plan.md` for the full build/provisioning walkthrough, including installing `alsa-utils` on the Pi (and a Chromium-family browser for the venue display — see "Venue display" below).
 
 ## Network setup
 
@@ -125,4 +125,10 @@ Everything below installs into system paths outside the app directory and only n
    ```
    Look for the `N: Name=` line that isn't your mouse/keyboard, and set `pedal_device_name` in `config.prod.yaml` to match (a substring is fine — the match is case-insensitive `contains`, not exact).
 
-That's it — pedal keystrokes aren't handled by `triggerhappy` or read from a terminal (both tried first; see `plans/pedal-connection-plan.md` for why each one broke). Instead, `songarooni` itself reads the pedal's raw Linux evdev device directly (see `internal/pedal`) and re-finds it automatically if reading ever fails (e.g. after a Bluetooth reconnect recreates the device node mid-show) — unlike `triggerhappy`, which only ever opens the device files it saw at its own startup and never recovers from that on its own. From here on, every show start (`start.sh`) just reconnects the pedal if needed and unbinds feh's own Space/Enter/Page Up/Page Down handling, so the pedal only ever drives the app, not feh's slideshow navigation too.
+That's it — pedal keystrokes aren't handled by `triggerhappy` or read from a terminal (both tried first; see `plans/pedal-connection-plan.md` for why each one broke). Instead, `songarooni` itself reads the pedal's raw Linux evdev device directly (see `internal/pedal`) and re-finds it automatically if reading ever fails (e.g. after a Bluetooth reconnect recreates the device node mid-show) — unlike `triggerhappy`, which only ever opens the device files it saw at its own startup and never recovers from that on its own. From here on, every show start (`start.sh`) just reconnects the pedal if needed, so the pedal drives the app directly.
+
+## Venue display: kiosk browser
+
+`songarooni` serves a kiosk-mode slideshow page on its own port (`browser_slideshow_addr`, default `:8888`) and launches a fullscreen kiosk browser window pointed at it, auto-detecting a Chromium-family browser on `PATH` (`chromium-browser`, `chromium`, `google-chrome`, in that order — covers both older and current Raspberry Pi OS versions, which renamed the binary across releases). Set `browser_command` in `config.yaml` to override the auto-detected command entirely (a full command + args list; `{{url}}` is replaced with the slideshow page's URL) if you need something else. See `internal/slideshow` and `plans/browser-slideshow-plan.md` (which also covers an earlier `feh`-based display, since removed in favor of this).
+
+No extra one-time Pi setup is strictly required beyond having a Chromium-family browser installed (Raspberry Pi OS ships one by default) — but if `make deploy` ever logs `no kiosk-capable browser found on PATH`, install one (`sudo apt install chromium` on current Raspberry Pi OS) or set `browser_command` explicitly.

@@ -9,11 +9,15 @@ import (
 	"sync"
 
 	"songarooni/internal/click"
-	"songarooni/internal/slideshow"
+	"songarooni/internal/slides"
 	"songarooni/internal/songs"
 )
 
-// Display shows a song's slides. slideshow.Slideshow satisfies this.
+// Display shows a song's slides. The venue display (internal/slideshow's
+// kiosk page) figures out what to show by polling this Controller's state
+// over HTTP itself, so it doesn't implement Display at all — cmd/songarooni
+// just uses a no-op Display in that case. This interface exists for
+// whatever does need a direct push notification instead.
 type Display interface {
 	Show(id int)
 }
@@ -56,7 +60,7 @@ type Controller struct {
 
 	catalog     []*songs.Song
 	byID        map[int]*songs.Song
-	defaultSong *songs.Song // same pointer as byID[slideshow.DefaultID]
+	defaultSong *songs.Song // same pointer as byID[slides.DefaultID]
 
 	selected   *songs.Song
 	playing    *songs.Song
@@ -69,13 +73,13 @@ type Controller struct {
 }
 
 // New builds a Controller over catalog, driving clicker and display. A
-// synthetic "Default" entry (id slideshow.DefaultID) is always added, for
+// synthetic "Default" entry (id slides.DefaultID) is always added, for
 // clicking at a manually-set tempo on songs that aren't in the catalog —
 // songs.LoadFile never produces id 0 itself (ids must be positive), so this
 // can't collide with a real song.
 func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controller {
 	defaultSong := &songs.Song{
-		ID:        slideshow.DefaultID,
+		ID:        slides.DefaultID,
 		Title:     "Default",
 		Slides:    "default",
 		Tempo:     defaultTempo,
@@ -150,7 +154,7 @@ func (c *Controller) selectRelative(delta int) error {
 
 	var order []*songs.Song
 	for _, s := range c.catalog {
-		if s.ID != slideshow.DefaultID {
+		if s.ID != slides.DefaultID {
 			order = append(order, s)
 		}
 	}
@@ -189,7 +193,7 @@ func (c *Controller) selectRelative(delta int) error {
 // press and can't sequence two separate API calls the way the phone's
 // Default button does (select, then start, as two awaited fetches).
 func (c *Controller) StartDefault() error {
-	if err := c.SelectSong(slideshow.DefaultID); err != nil {
+	if err := c.SelectSong(slides.DefaultID); err != nil {
 		return err
 	}
 	return c.Start()
@@ -319,12 +323,12 @@ func (c *Controller) ToggleLogo() error {
 		if c.playing != nil {
 			c.display.Show(c.playing.ID)
 		} else {
-			c.display.Show(slideshow.DefaultID)
+			c.display.Show(slides.DefaultID)
 		}
 		return nil
 	}
 	c.logoActive = true
-	c.display.Show(slideshow.LogoID)
+	c.display.Show(slides.LogoID)
 	return nil
 }
 

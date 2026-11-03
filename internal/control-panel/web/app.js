@@ -267,7 +267,6 @@ el.tempoSetBtn.addEventListener('click', async () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  console.log(`Key: ${e.key} | Code: ${e.code}`)
   if (e.code === 'PageDown' || e.code === 'ArrowDown') {
     e.preventDefault();
     const selected = el.list.querySelector('.selected');

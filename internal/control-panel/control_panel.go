@@ -1,16 +1,35 @@
-// Package httpapi exposes the Controller over the JSON API the phone
-// (and, incidentally, anything else on the network) talks to. No
+// Package control_panel serves the phone's control page and its JSON API
+// — song selection, start/stop, tempo, mute, logo toggle. No
 // authentication: an accepted risk for a private band network (see
 // initial-plan.md).
-package httpapi
+package control_panel
 
 import (
+	"context"
+	"embed"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 
 	"songarooni/internal/state"
 )
+
+//go:embed web
+var rawAssets embed.FS
+
+// webAssets is the embedded web/ directory, rooted so that index.html,
+// app.js and styles.css sit at its top level — matching the absolute paths
+// (/styles.css, /app.js) that index.html itself references.
+var webAssets = mustSub(rawAssets, "web")
+
+func mustSub(f embed.FS, dir string) fs.FS {
+	sub, err := fs.Sub(f, dir)
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}
 
 type songDTO struct {
 	ID        int               `json:"id"`
@@ -25,13 +44,40 @@ type fieldsDTO struct {
 	Displayed []string `json:"displayed"` // the subset config.yaml's displayed_fields selects for the list view
 }
 
-// Handler builds the /api/* mux for controller. extraFields is every
-// songs.csv column beyond the required four, in header order; displayedFields
-// is the config.yaml-selected subset to show in the phone's list view.
-func Handler(controller *state.Controller, extraFields, displayedFields []string) http.Handler {
+// Run builds the control panel's mux (the JSON API plus the embedded phone
+// page) and serves it on addr until ctx is done. extraFields is every
+// songs.csv column beyond the required four, in header order;
+// displayedFields is the config.yaml-selected subset to show in the
+// phone's list view.
+func Run(ctx context.Context, addr string, controller *state.Controller, extraFields, displayedFields []string) error {
+	mux := http.NewServeMux()
+	mux.Handle("/api/", apiHandler(controller, extraFields, displayedFields))
+	mux.Handle("/", noCache(http.FileServerFS(webAssets)))
+
+	server := &http.Server{Addr: addr, Handler: mux}
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("control panel listening on %s", addr)
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = server.Shutdown(context.Background())
+		return ctx.Err()
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	}
+}
+
+func apiHandler(controller *state.Controller, extraFields, displayedFields []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/songs", func(w http.ResponseWriter, r *http.Request) {
+		allowCrossOrigin(w) // the slideshow kiosk page, on its own port, polls this
 		catalog := controller.Songs()
 		dtos := make([]songDTO, len(catalog))
 		for i, s := range catalog {
@@ -45,6 +91,7 @@ func Handler(controller *state.Controller, extraFields, displayedFields []string
 	})
 
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
+		allowCrossOrigin(w) // the slideshow kiosk page, on its own port, polls this
 		writeJSON(w, http.StatusOK, controller.GetState())
 	})
 
@@ -168,10 +215,31 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("httpapi: encoding response: %v", err)
+		log.Printf("control-panel: encoding response: %v", err)
 	}
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// allowCrossOrigin permits any origin to read this response. Scoped to just
+// the couple of read-only GET endpoints the slideshow kiosk page (served
+// from its own port — a different origin) needs to poll — not applied
+// blanket across the whole API — since this is a private, unauthenticated
+// local network already (see the package doc) there's nothing a
+// cross-origin read here exposes that a direct request wouldn't already.
+func allowCrossOrigin(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+}
+
+// noCache stops the browser from caching the control page's static assets.
+// This is a small, locally-served app under active development — serving a
+// stale cached app.js against a server whose API shape has since changed is
+// a worse failure mode than re-fetching a few KB on every load.
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
