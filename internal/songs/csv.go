@@ -33,7 +33,7 @@ type Song struct {
 }
 
 var supportedImageExts = map[string]bool{
-	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
 }
 
 var requiredHeader = []string{"id", "title", "slides", "tempo"}

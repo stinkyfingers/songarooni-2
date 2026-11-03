@@ -11,6 +11,7 @@
   var slideIdx = 0;
   var cycleTimer = null;
   var lastShownID = null;
+  var videoSuffixes = [".mp4"];
 
   // Fetched once at startup from this server's own /config — apiPort (the
   // main server's port, for the cross-origin /api/state poll below) and
@@ -33,15 +34,49 @@
     return DEFAULT_ID;
   }
 
+  function isVideo(url) {
+    return videoSuffixes.some(function (s) { return url.toLowerCase().endsWith(s); });
+  }
+
+  // Builds whichever element type this slide needs. Both share the "slide"
+  // class, so the existing crossfade CSS (position/size/opacity transition)
+  // applies identically to images and video — no separate styling needed.
+  function makeLayerElement(url) {
+    var el;
+    if (isVideo(url)) {
+      el = document.createElement("video");
+      el.autoplay = true;
+      el.loop = true;
+      el.muted = true;
+      el.playsInline = true; // avoid iOS/Safari forcing fullscreen takeover on autoplay
+    } else {
+      el = document.createElement("img");
+    }
+    el.className = "slide";
+    el.src = url;
+    return el;
+  }
+
   function showSlide(url) {
     var nextLayer = 1 - activeLayer;
-    var img = layers[nextLayer];
-    img.onload = function () {
+    var oldEl = layers[nextLayer];
+    var newEl = makeLayerElement(url);
+
+    var reveal = function () {
       layers[activeLayer].classList.remove("visible");
-      img.classList.add("visible");
+      newEl.classList.add("visible");
       activeLayer = nextLayer;
     };
-    img.src = url;
+    // Images fire "load"; video elements don't — "loadeddata" is their
+    // equivalent "ready to show a frame" event.
+    if (newEl.tagName === "VIDEO") {
+      newEl.addEventListener("loadeddata", reveal, { once: true });
+    } else {
+      newEl.onload = reveal;
+    }
+
+    oldEl.parentNode.replaceChild(newEl, oldEl);
+    layers[nextLayer] = newEl; // keep the array pointed at the real current DOM element
   }
 
   function advance() {

@@ -57,7 +57,7 @@ func TestLaunchKioskGivesUpAfterRepeatedFastExits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := LaunchKiosk(ctx, "http://example.invalid", []string{"/bin/sh", "-c", "exit 0"})
+	err := LaunchKiosk(ctx, "http://example.invalid", []string{"/bin/sh", "-c", "exit 0"}, false)
 	if err == nil {
 		t.Fatal("expected an error after repeated fast exits")
 	}
@@ -71,15 +71,38 @@ func TestLaunchKioskGivesUpAfterRepeatedFastExits(t *testing.T) {
 
 // --user-data-dir is the actual fix for the single-instance hand-off
 // problem (not just the fast-exit cap above, which is only a safety net) —
-// confirm it's always present.
+// confirm it's always present, regardless of noKiosk.
 func TestBrowserArgsIncludesDedicatedProfileDir(t *testing.T) {
-	args := browserArgs("http://example.invalid")
-	for _, a := range args {
-		if strings.HasPrefix(a, "--user-data-dir=") {
-			return
+	for _, noKiosk := range []bool{false, true} {
+		args := browserArgs("http://example.invalid", noKiosk)
+		found := false
+		for _, a := range args {
+			if strings.HasPrefix(a, "--user-data-dir=") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("noKiosk=%v: expected --user-data-dir in browserArgs, got %v", noKiosk, args)
 		}
 	}
-	t.Fatalf("expected --user-data-dir in browserArgs, got %v", args)
+}
+
+func TestBrowserArgsOmitsKioskFlagWhenNoKiosk(t *testing.T) {
+	if !contains(browserArgs("http://example.invalid", false), "--kiosk") {
+		t.Fatal("expected --kiosk present when noKiosk=false")
+	}
+	if contains(browserArgs("http://example.invalid", true), "--kiosk") {
+		t.Fatal("expected --kiosk omitted when noKiosk=true")
+	}
+}
+
+func contains(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSubstituteURL(t *testing.T) {

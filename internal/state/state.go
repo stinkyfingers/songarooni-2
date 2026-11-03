@@ -83,7 +83,7 @@ func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controll
 		Title:     "Default",
 		Slides:    "default",
 		Tempo:     defaultTempo,
-		HasImages: true, // whether default_slideshow actually has images is the display backend's concern, not this package's
+		HasImages: true, // validated separately via default_slideshow at slideshow.New() time, not here
 	}
 
 	all := make([]*songs.Song, 0, len(catalog)+1)
