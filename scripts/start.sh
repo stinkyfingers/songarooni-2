@@ -2,7 +2,8 @@
 # Double-click this on the Pi to start Songarooni. Must live in the same
 # directory as the compiled `songarooni` binary (copy it there alongside
 # config.yaml/songs.csv/media/connect-pedal.sh when deploying — see
-# README.md).
+# README.md). Starts a kiosk browser for the venue display itself (see
+# internal/slideshow); nothing extra needed here for that.
 
 # Depending on how the file manager is configured, double-clicking an
 # executable script can run it directly with no terminal attached at all —
@@ -35,11 +36,6 @@ amixer -c "$CARD" sset PCM 100% unmute >/dev/null 2>&1 || true
 # since the phone remains a full fallback control either way.
 if [ -x ./connect-pedal.sh ]; then
 	./connect-pedal.sh || true
-fi
-
-# unbind key commands for feh from the ones the pedal uses, so the pedal doesn't accidentally trigger feh's slideshow controls
-if [ -x ./unbind-feh-keys.sh ]; then
-	./unbind-feh-keys.sh || true
 fi
 
 # If config.yaml's addr uses a privileged port (<1024, e.g. :80), the binary

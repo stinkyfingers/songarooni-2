@@ -1,290 +1,149 @@
+// Package slideshow serves a kiosk-mode slideshow page: a plain HTML/JS
+// page that polls the main server's /api/state (a different origin — see
+// internal/control-panel's CORS allowance on that route) and cycles
+// through the current song's slides itself, fetched from this server's own
+// /slides and /images/ routes. Deliberately kept on its own port rather
+// than merged into the control panel's mux — see
+// plans/browser-slideshow-plan.md for the reasoning. This replaced an
+// earlier feh-backed display (see that same plan doc for why) — this is
+// now the only display backend.
 package slideshow
 
 import (
 	"context"
 	_ "embed"
-	"fmt"
-	"log"
-	"math/rand/v2"
-	"os"
-	"os/exec"
+	"encoding/json"
+	"net/http"
+	"net/url"
+	"path"
 	"path/filepath"
-	"strings"
-	"sync/atomic"
-	"time"
+	"strconv"
+
+	"songarooni/internal/slides"
 )
 
-var (
-	//go:embed logo.png
-	embeddedLogo []byte
+//go:embed logo.png
+var embeddedLogo []byte
 
-	reloadInterval = 2 // seconds; deliberately offset from -D so feh reloads after the next slide change, not before
-)
-
-// DefaultID is the sentinel song id that selects the "default" subdirectory
-// instead of a specific song's slides. Real song ids from songs.csv start at
-// 1, so 0 is never a valid song id.
-const DefaultID = 0
-
-// LogoID is the sentinel id that shows just the embedded logo, full-screen,
-// instead of any song's slide deck. Negative, so it can never collide with
-// a real song id (which must be positive) or DefaultID.
-const LogoID = -1
-
-// Slideshow plays a feh slideshow keyed off a selected song id, with images
-// expected under <parentDir>/<subdirectory>/, where subdirectory is
-// songMap[id] if id is mapped. DefaultID, an unmapped id, or a mapped id
-// whose directory doesn't exist on disk all fall back to defaultDir — a
-// separately configured directory of non-song-specific slides, not a
-// subdirectory of parentDir.
+// Slideshow serves the kiosk page over HTTP. It holds no "currently
+// showing" state of its own — the page it serves polls the main server for
+// that itself (see poll() in web/app.js) — so unlike a push-driven display,
+// the Controller it runs alongside just uses a no-op Display.
 type Slideshow struct {
-	parentDir     string
-	defaultDir    string
-	logoFrequency int
-	interval      int
-	songMap       map[int]string // id -> slideshow subdirectory name
-
-	startChan chan struct{}
-	songChan  chan int
-	current   atomic.Int64
+	addr       string
+	parentDir  string // config's SlideDir
+	defaultDir string // config's DefaultSlideshow
+	songMap    map[int]string
+	logoEvery  int
+	intervalMS int
+	apiPort    string // the main server's port, for the page's cross-origin poll of /api/state
 }
 
-// New prepares a Slideshow rooted at parentDir, using songMap (song id ->
-// slideshow subdirectory name) to resolve a selected id to its images, and
-// defaultDir for DefaultID and any other fallback case. It fails fast if
-// either directory doesn't exist or the embedded logo can't be staged,
-// rather than discovering that a few iterations into Run.
-func New(parentDir, defaultDir string, songMap map[int]string, logoFrequency, interval int) (*Slideshow, error) {
-	parentDir = expandPath(parentDir)
-	defaultDir = expandPath(defaultDir)
-
-	if info, err := os.Stat(parentDir); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("parent image directory not found: %s", parentDir)
-	}
-	if info, err := os.Stat(defaultDir); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("default_slideshow directory not found: %s", defaultDir)
-	}
-
+// New prepares a Slideshow listening on addr. apiPort is the main server's
+// listen port (parsed from config.yaml's addr) — the kiosk browser always
+// reaches the main server at the same hostname it reaches this one at,
+// just a different port, so only the port number needs to travel to the
+// page, not a full URL.
+func New(addr, parentDir, defaultDir string, songMap map[int]string, logoEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
 	return &Slideshow{
-		parentDir:     parentDir,
-		defaultDir:    defaultDir,
-		logoFrequency: logoFrequency,
-		interval:      interval,
-		songMap:       songMap,
-		startChan:     make(chan struct{}, 1),
-		songChan:      make(chan int, 1),
-	}, nil
-}
-
-// Show requests a switch to id's slides (DefaultID for the default deck).
-// Non-blocking: if Run isn't keeping up (or was never started), the request
-// is logged and dropped rather than stalling the caller.
-func (s *Slideshow) Show(id int) {
-	select {
-	case s.songChan <- id:
-	default:
-		log.Printf("slideshow busy or unavailable; dropped request for song id %d", id)
+		addr:       addr,
+		parentDir:  parentDir,
+		defaultDir: defaultDir,
+		songMap:    songMap,
+		logoEvery:  logoEvery,
+		intervalMS: slideIntervalSeconds * 1000,
+		apiPort:    apiPort,
 	}
 }
 
-// Current returns the id most recently handed to feh (DefaultID before the
-// first Show, or once the no-match timeout falls back to the default deck).
-func (s *Slideshow) Current() int {
-	return int(s.current.Load())
-}
-
-func (s *Slideshow) Start() {
-	s.startChan <- struct{}{}
-}
-
+// Run serves the kiosk page and its assets until ctx is done.
 func (s *Slideshow) Run(ctx context.Context) error {
-	<-s.startChan
-	fmt.Println("Starting slideshow stream...")
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /config", s.handleConfig)
+	mux.HandleFunc("GET /logo.png", s.handleLogo)
+	mux.HandleFunc("GET /slides", s.handleSlides)
+	mux.Handle("GET /images/song/", http.StripPrefix("/images/song/", http.FileServer(http.Dir(s.parentDir))))
+	mux.Handle("GET /images/default/", http.StripPrefix("/images/default/", http.FileServer(http.Dir(s.defaultDir))))
+	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css
 
-	logo, err := os.Create("songarooni-slideshow-logo.png")
-	if err != nil {
-		return fmt.Errorf("failed to create logo file: %w", err)
-	}
-	defer logo.Close()
-	err = os.WriteFile(logo.Name(), embeddedLogo, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write slide deck file: %w", err)
-	}
+	server := &http.Server{Addr: s.addr, Handler: mux}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
 
-	imgList, err := os.Create("img-list.txt")
-	if err != nil {
-		return fmt.Errorf("failed to create slide deck file: %w", err)
-	}
-	defer imgList.Close()
-
-	absLogoPath, err := filepath.Abs(logo.Name())
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path of logo: %w", err)
-	}
-	logoLineLen, err := imgList.WriteString(absLogoPath + "\n")
-	if err != nil {
-		log.Println("Error writing to img-list.txt:", err)
-	}
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case id := <-s.songChan:
-				s.current.Store(int64(id))
-
-				var deck []string
-				var err error
-				if id == LogoID {
-					// Logo mode: skip the normal directory scan entirely and
-					// show just the one embedded image.
-					deck = []string{absLogoPath}
-				} else {
-					// get path from song id
-					var slideDir string
-					if subdir, ok := s.songMap[id]; id != DefaultID && ok {
-						slideDir = filepath.Join(s.parentDir, subdir)
-						if info, statErr := os.Stat(slideDir); statErr != nil || !info.IsDir() {
-							// Not an error; just no slides for this song.
-							slideDir = s.defaultDir
-						}
-					} else {
-						slideDir = s.defaultDir
-					}
-					fmt.Printf("Looking for slides in %s\n", slideDir)
-
-					deck, err = slideDeck(slideDir, logo.Name(), s.logoFrequency, slideDir == s.defaultDir)
-					if err != nil {
-						log.Println("Error getting slides:", err)
-						continue
-					}
-				}
-
-				// Keep the logo line (the first logoLineLen bytes) and
-				// overwrite everything after it with the new deck.
-				// len(embeddedLogo) is the PNG's byte size, not this
-				// line's length, and Seek(0, 0) rewinds to the start of
-				// the file — both would clobber the logo line itself.
-				if err := imgList.Truncate(int64(logoLineLen)); err != nil {
-					log.Println("Error truncating img-list.txt:", err)
-				}
-				if _, err := imgList.Seek(int64(logoLineLen), 0); err != nil {
-					log.Println("Error seeking img-list.txt:", err)
-				}
-				for _, slide := range deck {
-					_, err = imgList.WriteString(slide + "\n")
-					if err != nil {
-						log.Println("Error writing to img-list.txt:", err)
-					}
-				}
-				if err = imgList.Sync(); err != nil {
-					log.Println("Error syncing img-list.txt:", err)
-				}
-
-			}
-		}
-	}()
-
-	path, err := (filepath.Abs(imgList.Name()))
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path of img-list.txt: %w", err)
-	}
-	log.Printf("Using img-list.txt at %s", path)
-	args := []string{
-		"-F",                                // fullscreen
-		"-Z",                                // auto-zoom
-		"-D", fmt.Sprintf("%d", s.interval), // slide delay
-		"-R", fmt.Sprintf("%d", reloadInterval), // reload interval
-		"--hide-pointer", // hide mouse cursor
-		"--quiet",        // suppress warnings
-		"-f", path,       // directory to watch
-	}
-	// feh exiting for any reason (crash, closed window, X restart, ...)
-	// must not end Run: the goroutines above are tied to ctx and run for
-	// the app's whole lifetime, so returning here on every feh exit would
-	// tear down tmpDir out from under them. Only ctx cancellation ends
-	// Run; any other feh exit is logged and feh is restarted.
-	for {
-		execCmd := exec.CommandContext(ctx, "feh", args...)
-		runErr := execCmd.Run()
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		log.Printf("feh exited unexpectedly (%v); restarting", runErr)
-		time.Sleep(time.Second)
-	}
-}
-
-func slideDeck(imgDir, logoPath string, logoFrequency int, shuffle bool) ([]string, error) {
-	info, err := os.Stat(imgDir)
-	if err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("image directory not found: %s", imgDir)
-	}
-	var files []string
-	err = filepath.Walk(imgDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	select {
+	case <-ctx.Done():
+		_ = server.Shutdown(context.Background())
+		return ctx.Err()
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
 			return err
 		}
-		if !info.IsDir() {
-			if strings.HasPrefix(info.Name(), ".") {
-				return nil // skip hidden files
-			}
-			ext := strings.ToLower(filepath.Ext(info.Name()))
-			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" {
-				files = append(files, path)
-			}
-		}
 		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error scanning directory: %v", err)
 	}
-
-	if len(files) == 0 {
-		return nil, fmt.Errorf("no image files found in directory: %s", imgDir)
-	}
-	var slideImages []string
-	for _, file := range files {
-		// skip logo
-		if filepath.Clean(file) != filepath.Clean(logoPath) {
-			slideImages = append(slideImages, file)
-		}
-	}
-
-	if shuffle {
-		rand.Shuffle(len(slideImages), func(i, j int) {
-			slideImages[i], slideImages[j] = slideImages[j], slideImages[i]
-		})
-	}
-
-	// Not removed here: feh needs to read this file for as long as it's
-	// part of the current slide deck. Old copies are cleaned up by the
-	// "remove old slides" loop in Run when the deck changes; tmpDir itself
-	// is cleaned up by Run's defer on shutdown.
-
-	// Odd effect of the logo insertion: if the logo is inserted, feh restarts the slideshow after every logo.
-
-	// for i := range slideImages {
-	// 	if i%logoFrequency == 0 && i > 0 { // Insert logo after every x images
-	// 		absLogoPath, err := filepath.Abs(logoPath)
-	// 		if err != nil {
-	// 			return nil, fmt.Errorf("failed to get absolute path of logo: %w", err)
-	// 		}
-	// 		slideImages = append(slideImages[:i], append([]string{absLogoPath}, slideImages[i:]...)...)
-	// 	}
-
-	// }
-	return slideImages, nil
 }
 
-func expandPath(path string) string {
-	if len(path) >= 2 && path[:2] == "~/" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
+// handleConfig tells the static page the two values it can't know on its
+// own: the main server's port (for its cross-origin /api/state poll) and
+// how long each slide should hold before crossfading. Kept as a separate
+// endpoint rather than templated into index.html so index.html/app.js stay
+// fully static, embedded files like internal/control-panel's.
+func (s *Slideshow) handleConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		APIPort    string `json:"apiPort"`
+		IntervalMs int    `json:"intervalMs"`
+	}{s.apiPort, s.intervalMS})
+}
+
+func (s *Slideshow) handleLogo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	_, _ = w.Write(embeddedLogo)
+}
+
+// handleSlides resolves ?id=<song id> to its ordered slide URLs (JSON
+// array of strings), using internal/slides for the actual
+// DefaultID/LogoID/missing-directory/shuffle/logo-insertion resolution.
+func (s *Slideshow) handleSlides(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.URL.Query().Get("id"))
+	if err != nil {
+		http.Error(w, "invalid or missing id", http.StatusBadRequest)
+		return
 	}
-	return path
+
+	deck, err := slides.Resolve(s.parentDir, s.defaultDir, s.songMap, s.logoEvery, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	urls := make([]string, len(deck.Files))
+	for i, f := range deck.Files {
+		urls[i] = slideURL(deck, f)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store") // a song's own deck is shuffled fresh per Resolve call; never cache
+	if err := json.NewEncoder(w).Encode(urls); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// slideURL maps one of deck's Files entries to the URL that'll actually
+// serve it: "/logo.png" for a logo marker, otherwise under whichever of
+// /images/song/ or /images/default/ matches deck.Base — url.URL handles
+// percent-encoding any special characters in filenames.
+func slideURL(deck slides.Deck, file string) string {
+	if file == "" {
+		return "/logo.png"
+	}
+
+	prefix := "/images/default/"
+	rel := file
+	if deck.Base == slides.SongRoot {
+		prefix = "/images/song/"
+		rel = path.Join(deck.Subdir, file)
+	}
+
+	u := url.URL{Path: prefix + filepath.ToSlash(rel)}
+	return u.String()
 }

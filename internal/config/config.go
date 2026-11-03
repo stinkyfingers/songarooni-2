@@ -15,13 +15,14 @@ type Config struct {
 	SongsCSV             string   `yaml:"songs_csv"`              // path to songs.csv
 	SlideDir             string   `yaml:"slide_dir"`              // base directory containing per-song slide subdirectories
 	DefaultSlideshow     string   `yaml:"default_slideshow"`      // directory of non-song-specific slides: the Default button, and the fallback for an unknown/missing song deck
-	SlideIntervalSeconds int      `yaml:"slide_interval_seconds"` // feh: seconds per slide / reload interval
-	LogoFrequency        int      `yaml:"logo_frequency"`         // feh: insert the logo after every N slides
+	SlideIntervalSeconds int      `yaml:"slide_interval_seconds"` // seconds per slide before crossfading to the next
+	LogoFrequency        int      `yaml:"logo_frequency"`         // insert the logo after every N slides (<=0 disables it)
 	AudioDevice          string   `yaml:"audio_device"`           // ALSA device name for the click, e.g. "default" or "hw:1,0"
 	ClickVolume          float64  `yaml:"click_volume"`           // click loudness, 0 (silent) to 1 (full scale)
 	ClickFrequency       float64  `yaml:"click_frequency"`        // click tone frequency in Hz, e.g. 1800
 	LogFile              string   `yaml:"log_file"`               // path to the truncated-on-startup log file
 	DisplayedFields      []string `yaml:"displayed_fields"`       // which extra songs.csv columns to show in the phone's song list (empty: none)
+	NoKiosk              bool     `yaml:"no_kiosk"`               // if true, launch a regular, non-kiosk browser instead of the slideshow kiosk
 
 	// PedalDeviceName is matched case-insensitively against each /dev/input
 	// device's name (via EVIOCGNAME) to find the M-Vave Chocolate foot
@@ -29,6 +30,20 @@ type Config struct {
 	// confirmed value; if the pedal isn't found, check its real name with
 	// `cat /proc/bus/input/devices` on the Pi and set this to match.
 	PedalDeviceName string `yaml:"pedal_device_name"`
+
+	// BrowserSlideshowAddr is the slideshow kiosk page's own HTTP listen
+	// address — deliberately separate from Addr (the control panel's), not
+	// merged into the same mux.
+	BrowserSlideshowAddr string `yaml:"browser_slideshow_addr"`
+
+	// BrowserCommand is the kiosk browser's full command + args, with
+	// "{{url}}" replaced at launch time by the slideshow page's URL.
+	// Different browsers want the URL in different places (Chromium's
+	// --app= fuses it into one flag; others take it as a bare trailing
+	// arg), which a placeholder handles generically. Leave empty (the
+	// default) to auto-detect a Chromium-family browser on PATH instead —
+	// see internal/slideshow.
+	BrowserCommand []string `yaml:"browser_command"`
 }
 
 func defaults() Config {
@@ -44,6 +59,7 @@ func defaults() Config {
 		ClickFrequency:       1800,
 		LogFile:              "songarooni.log",
 		PedalDeviceName:      "FootCtrlPlus Keyboard",
+		BrowserSlideshowAddr: ":8888",
 	}
 }
 

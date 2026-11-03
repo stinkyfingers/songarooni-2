@@ -21,9 +21,9 @@ test:
 	go test ./...
 
 # Ships the whole per-show app bundle in one shot: the binary, songs.csv,
-# and every scripts/ file start.sh depends on at runtime (connect-pedal.sh,
-# unbind-feh-keys.sh). rsync (not scp) so it's one command for a list of
-# files and so executable bits survive the copy. Deliberately NOT included:
+# and every scripts/ file start.sh depends on at runtime (connect-pedal.sh).
+# rsync (not scp) so it's one command for a list of files and so executable
+# bits survive the copy. Deliberately NOT included:
 #   - media/ — slide images are copied onto the Pi by hand over USB, not
 #     synced from here.
 #   - One-time Pi system setup (triggerhappy's config, Bluetooth persistence,
@@ -38,7 +38,7 @@ test:
 deploy: build-pi
 	rsync -av \
 		$(DIST)/$(BINARY) songs.csv \
-		scripts/start.sh scripts/connect-pedal.sh scripts/unbind-feh-keys.sh \
+		scripts/start.sh scripts/connect-pedal.sh \
 		$(HOST):$(REMOTE_DIR)
 	rsync -av config.prod.yaml $(HOST):$(REMOTE_DIR)config.yaml
 
