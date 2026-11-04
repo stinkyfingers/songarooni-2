@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 
+	"songarooni/internal/config"
 	"songarooni/internal/state"
 )
 
@@ -49,15 +50,15 @@ type fieldsDTO struct {
 // songs.csv column beyond the required four, in header order;
 // displayedFields is the config.yaml-selected subset to show in the
 // phone's list view.
-func Run(ctx context.Context, addr string, controller *state.Controller, extraFields, displayedFields []string) error {
+func Run(ctx context.Context, controller *state.Controller, extraFields, displayedFields []string, configuration config.Config) error {
 	mux := http.NewServeMux()
-	mux.Handle("/api/", apiHandler(controller, extraFields, displayedFields))
+	mux.Handle("/api/", apiHandler(controller, extraFields, displayedFields, configuration))
 	mux.Handle("/", noCache(http.FileServerFS(webAssets)))
 
-	server := &http.Server{Addr: addr, Handler: mux}
+	server := &http.Server{Addr: configuration.Addr, Handler: mux}
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("control panel listening on %s", addr)
+		log.Printf("control panel listening on %s", configuration.Addr)
 		errCh <- server.ListenAndServe()
 	}()
 
@@ -73,7 +74,7 @@ func Run(ctx context.Context, addr string, controller *state.Controller, extraFi
 	}
 }
 
-func apiHandler(controller *state.Controller, extraFields, displayedFields []string) http.Handler {
+func apiHandler(controller *state.Controller, extraFields, displayedFields []string, configuration config.Config) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/songs", func(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +94,10 @@ func apiHandler(controller *state.Controller, extraFields, displayedFields []str
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		allowCrossOrigin(w) // the slideshow kiosk page, on its own port, polls this
 		writeJSON(w, http.StatusOK, controller.GetState())
+	})
+
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, configuration)
 	})
 
 	mux.HandleFunc("POST /api/select", func(w http.ResponseWriter, r *http.Request) {

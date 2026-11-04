@@ -55,11 +55,15 @@ func main() {
 	defer cancel()
 
 	display := buildDisplay(ctx, cfg, catalog)
-	clicker := click.New(cfg.AudioDevice, clampVolume(cfg.ClickVolume), cfg.ClickFrequency)
+	var clicker click.Clicker
+	clicker = &click.NoopClicker{} // default to a no-op clicker if no supported audio player is found on PATH
+	if !cfg.NoClick {
+		clicker = click.New(cfg.AudioDevice, clampVolume(cfg.ClickVolume), cfg.ClickFrequency)
+	}
 	controller := state.New(catalog, clicker, display)
 
 	go func() {
-		if err := control_panel.Run(ctx, cfg.Addr, controller, extraFields, displayedFields); err != nil && ctx.Err() == nil {
+		if err := control_panel.Run(ctx, controller, extraFields, displayedFields, cfg); err != nil && ctx.Err() == nil {
 			log.Fatalf("control panel failed: %v", err)
 		}
 	}()

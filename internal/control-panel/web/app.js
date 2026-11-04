@@ -11,6 +11,7 @@ let state = {
   playingSongId: 0, playingTitle: '', playingTempo: 0,
   running: false, muted: false, logoActive: false,
 };
+let configuration = {};
 
 const el = {
   search: document.getElementById('search'),
@@ -99,7 +100,7 @@ function renderList() {
     // static number in the list would just go stale — only show BPM for
     // real songs, whose tempo is fixed from songs.csv.
     title.textContent =
-      song.id === DEFAULT_SONG_ID ?
+      ((song.id === DEFAULT_SONG_ID) || configuration.no_click) ?
         song.title :
         `${song.title} — ${song.tempo} BPM`.trim();
 
@@ -173,6 +174,14 @@ function renderState() {
       ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
   lastScrolledSelectedId = state.selectedSongId;
+}
+
+function adjustConfigurationUI(config) {
+  if (config.no_click) {
+    el.muteBtn.style.display = 'none';
+  } else {
+    el.muteBtn.style.display = '';
+  }
 }
 
 async function selectSong(id) {
@@ -293,10 +302,11 @@ document.addEventListener('keydown', (e) => {
 
 (async function init() {
   try {
-    [songs, fields, state] = await Promise.all([
+    [songs, fields, state, configuration] = await Promise.all([
       api('GET', '/api/songs'),
       api('GET', '/api/fields'),
       api('GET', '/api/state'),
+      api('GET', '/api/config')
     ]);
     // Defensive: an API field that should always be an array must not be
     // allowed to take the whole page down if it's ever null instead.
@@ -305,6 +315,7 @@ document.addEventListener('keydown', (e) => {
     populateSortOptions();
     renderList();
     renderState();
+    adjustConfigurationUI(configuration);
     // Some iOS/WebKit builds don't reliably deliver hardware-keyboard
     // keydown events to the page at all unless *something* is focused —
     // desktop browsers fire the document-level listener below regardless.

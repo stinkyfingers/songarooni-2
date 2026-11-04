@@ -27,7 +27,7 @@ type Clicker interface {
 }
 
 // NoopClicker logs clicks instead of playing them. Used when no supported
-// audio player is available on PATH.
+// audio player is available on PATH or when click is disabled in config.yaml (no_click: true).
 type NoopClicker struct {
 	running bool
 }
