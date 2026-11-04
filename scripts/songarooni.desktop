@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Songarooni
+Comment=Start the band show controller
+Exec=/home/admin/songarooni/start.sh
+Icon=utilities-terminal
+Terminal=false

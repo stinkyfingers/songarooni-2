@@ -1,10 +1,14 @@
 #!/bin/bash
 # scripts/connect-pedal.sh — ensure the M-Vave Chocolate is connected before
 # the show starts. Safe to run anytime: a near-instant no-op if it's already
-# connected, a few retries otherwise. Does NOT re-pair from scratch — if the
-# bond itself is gone (e.g. the pedal was paired with another device since),
-# this will fail and tell you to re-pair manually; that step needs the pedal
-# physically in pairing mode, which can't be scripted.
+# connected, a couple of quick retries otherwise. Only called once, from
+# start.sh, before songarooni launches — not a background watchdog — so
+# this stays brief (2 retries) rather than hanging around: Bluetooth is a
+# secondary path now that the pedal is wired via USB, not worth spending
+# real startup time chasing. Does NOT re-pair from scratch — if the bond
+# itself is gone (e.g. the pedal was paired with another device since),
+# this will fail and tell you to re-pair manually; that step needs the
+# pedal physically in pairing mode, which can't be scripted.
 MAC="25:FA:C2:54:4A:62"   # from `bluetoothctl devices`
 
 if bluetoothctl info "$MAC" 2>/dev/null | grep -q "Connected: yes"; then
@@ -13,7 +17,7 @@ if bluetoothctl info "$MAC" 2>/dev/null | grep -q "Connected: yes"; then
 fi
 
 echo "Pedal not connected — retrying..."
-for i in 1 2 3 4 5; do
+for i in 1 2; do
     bluetoothctl connect "$MAC" && exit 0
     sleep 2
 done

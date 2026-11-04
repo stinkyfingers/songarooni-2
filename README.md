@@ -127,6 +127,23 @@ Everything below installs into system paths outside the app directory and only n
 
 That's it — pedal keystrokes aren't handled by `triggerhappy` or read from a terminal (both tried first; see `plans/pedal-connection-plan.md` for why each one broke). Instead, `songarooni` itself reads the pedal's raw Linux evdev device directly (see `internal/pedal`) and re-finds it automatically if reading ever fails (e.g. after a Bluetooth reconnect recreates the device node mid-show) — unlike `triggerhappy`, which only ever opens the device files it saw at its own startup and never recovers from that on its own. From here on, every show start (`start.sh`) just reconnects the pedal if needed, so the pedal drives the app directly.
 
+## One-time Pi setup: easy single-click start
+
+1. **Stop the port-80 password prompt from repeating on every redeploy.** `setcap`'s grant is tied to the specific binary file, and every `make deploy` replaces it — wiping the grant each time. A narrow passwordless-sudo rule for just this one command fixes it permanently:
+   ```bash
+   which setcap   # confirm the real path — usually /usr/sbin/setcap on Raspberry Pi OS
+   echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/sbin/setcap cap_net_bind_service=+ep *" | sudo tee /etc/sudoers.d/songarooni-setcap
+   sudo chmod 440 /etc/sudoers.d/songarooni-setcap
+   ```
+   (Only needed at all if `config.prod.yaml`'s `addr` uses a port below 1024, e.g. `:80`.)
+
+2. **Add a desktop icon for single-click start.** `make deploy` ships `songarooni.desktop` into the app directory alongside `start.sh`; activate it once:
+   ```bash
+   cp ~/songarooni/songarooni.desktop ~/Desktop/
+   chmod +x ~/Desktop/songarooni.desktop
+   ```
+   Then right-click the new desktop icon and choose "Trust this launcher" (or similar — exact wording varies by Raspberry Pi OS version) the first time; after that, double-clicking just runs it directly. `Terminal=false` in the launcher is deliberate — `start.sh` already detects a non-terminal stdout and relaunches itself inside one on its own, so the launcher doesn't need to wrap it in one too.
+
 ## Venue display: kiosk browser
 
 `songarooni` serves a kiosk-mode slideshow page on its own port (`browser_slideshow_addr`, default `:8888`) and launches a fullscreen kiosk browser window pointed at it, auto-detecting a Chromium-family browser on `PATH` (`chromium-browser`, `chromium`, `google-chrome`, in that order — covers both older and current Raspberry Pi OS versions, which renamed the binary across releases). Set `browser_command` in `config.yaml` to override the auto-detected command entirely (a full command + args list; `{{url}}` is replaced with the slideshow page's URL) if you need something else. See `internal/slideshow` and `plans/browser-slideshow-plan.md` (which also covers an earlier `feh`-based display, since removed in favor of this).
