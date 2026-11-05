@@ -179,8 +179,12 @@ function renderState() {
 function adjustConfigurationUI(config) {
   if (config.no_click) {
     el.muteBtn.style.display = 'none';
+    el.stopBtn.style.display = 'none';
+    el.defaultTempoBox.style.display = 'none';
   } else {
     el.muteBtn.style.display = '';
+    el.stopBtn.style.display = '';
+    el.defaultTempoBox.style.display = '';
   }
 }
 

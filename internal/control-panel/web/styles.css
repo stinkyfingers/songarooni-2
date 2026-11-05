@@ -196,3 +196,24 @@ h1 {
   font-size: 0.85rem;
   color: #aaa;
 }
+/* Width of the entire vertical scrollbar */
+::-webkit-scrollbar {
+  width: 30px; 
+}
+
+/* The track (background) of the scrollbar */
+::-webkit-scrollbar-track {
+  background: #fff;
+  border-radius: 6px;
+}
+
+/* The draggable scrolling handle (thumb) */
+::-webkit-scrollbar-thumb {
+  background: #aaa;
+  border-radius: 6px;
+}
+
+/* Hover state for the thumb */
+::-webkit-scrollbar-thumb:hover {
+  background: #111;
+}
