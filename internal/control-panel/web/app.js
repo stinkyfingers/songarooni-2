@@ -17,6 +17,7 @@ const el = {
   search: document.getElementById('search'),
   sortBy: document.getElementById('sort-by'),
   list: document.getElementById('song-list'),
+  listThumb: document.getElementById('song-list-thumb'),
   defaultTempoBox: document.getElementById('default-tempo'),
   tempoInput: document.getElementById('tempo-input'),
   tempoSetBtn: document.getElementById('tempo-set-btn'),
@@ -126,7 +127,66 @@ function renderList() {
     li.addEventListener('click', () => selectSong(song.id));
     el.list.appendChild(li);
   }
+  updateScrollThumb(); // the list's content height just changed
 }
+
+// Draws #song-list-thumb to match #song-list's current scroll position —
+// the custom scrollbar indicator (see styles.css's .scroll-thumb) that
+// replaces the native one everywhere, since iOS Safari (and every iOS
+// browser) ignores ::-webkit-scrollbar-* styling with no CSS-only
+// workaround. #song-list itself still scrolls normally (mouse wheel,
+// touch drag on the list, keyboard) — this just keeps the thumb in sync
+// with that; dragging the thumb directly is handled separately below.
+function updateScrollThumb() {
+  const list = el.list;
+  const thumb = el.listThumb;
+  const overflow = list.scrollHeight - list.clientHeight;
+  if (overflow <= 0) {
+    thumb.style.display = 'none';
+    return;
+  }
+  const ratio = list.clientHeight / list.scrollHeight;
+  const thumbHeight = Math.max(ratio * list.clientHeight, 24);
+  const top = (list.scrollTop / overflow) * (list.clientHeight - thumbHeight);
+  thumb.style.display = 'block';
+  thumb.style.height = `${thumbHeight}px`;
+  thumb.style.top = `${top}px`;
+}
+
+el.list.addEventListener('scroll', updateScrollThumb);
+window.addEventListener('resize', updateScrollThumb);
+
+// Makes the thumb itself draggable — Pointer Events cover mouse and touch
+// (including iOS) in one code path, no separate handlers needed per input
+// type. Converts the thumb's own on-screen drag distance into a
+// proportional change in #song-list's scrollTop (the thumb's track is
+// shorter than the list's scrollable content, so a small thumb movement
+// means a larger content scroll).
+let dragStartY = null;
+let dragStartScrollTop = null;
+
+el.listThumb.addEventListener('pointerdown', (e) => {
+  dragStartY = e.clientY;
+  dragStartScrollTop = el.list.scrollTop;
+  el.listThumb.setPointerCapture(e.pointerId); // keep tracking even once the pointer drifts off this thin element
+  e.preventDefault(); // avoid text selection / native scroll fighting the drag
+});
+
+el.listThumb.addEventListener('pointermove', (e) => {
+  if (dragStartY === null) return;
+  const overflow = el.list.scrollHeight - el.list.clientHeight;
+  const trackHeight = el.list.clientHeight - el.listThumb.offsetHeight;
+  if (trackHeight <= 0) return;
+  const deltaY = e.clientY - dragStartY;
+  el.list.scrollTop = dragStartScrollTop + (deltaY / trackHeight) * overflow;
+});
+
+function endThumbDrag() {
+  dragStartY = null;
+  dragStartScrollTop = null;
+}
+el.listThumb.addEventListener('pointerup', endThumbDrag);
+el.listThumb.addEventListener('pointercancel', endThumbDrag);
 
 function renderState() {
   if (state.running) {

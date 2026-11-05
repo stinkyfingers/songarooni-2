@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"songarooni/internal/config"
 	"songarooni/internal/songs"
 	"songarooni/internal/state"
 )
@@ -21,7 +22,7 @@ func (fakeDisplay) Show(id int) {}
 func testHandler() http.Handler {
 	catalog := []songs.Song{{ID: 1, Title: "Song One", Slides: "song-one", Tempo: 120}}
 	controller := state.New(catalog, fakeClicker{}, fakeDisplay{})
-	return apiHandler(controller, nil, nil)
+	return apiHandler(controller, nil, nil, config.Config{})
 }
 
 // The slideshow kiosk page polls these two endpoints cross-origin (it runs

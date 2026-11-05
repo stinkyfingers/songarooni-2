@@ -60,22 +60,66 @@ h1 {
   color: #eee;
 }
 
-#song-list {
-  list-style: none;
-  margin: 0 0 1.5rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+#song-list-wrap {
   /* The one element that grows/shrinks (everything else is pinned to
      `flex: none` above) — min-height: 0 is what actually lets a flex child
      shrink below its content's natural height; without it, #default-tempo
      appearing would push the page taller instead of #song-list yielding
-     the room. overflow-y still catches the case where even the minimum
-     doesn't fit. */
+     the room. #song-list's own overflow-y still catches the case where
+     even the minimum doesn't fit. position: relative anchors
+     #song-list-thumb (see below) to this box. */
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  margin-bottom: 1.5rem;
+}
+
+#song-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100%;
   overflow-y: auto;
+  /* Hide the native scrollbar everywhere in favor of #song-list-thumb
+     below. Not just an iOS workaround (though iOS Safari — and every iOS
+     browser, all WebKit underneath — ignores ::-webkit-scrollbar-*
+     styling outright, with no CSS-only fix): one hand-drawn indicator
+     that works identically everywhere is simpler than a native-styled one
+     for most browsers plus a separate fallback just for iOS. */
+  scrollbar-width: none; /* Firefox */
+}
+
+#song-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* Draggable (see the pointerdown/move/up handlers in app.js) — padding
+   widens the actual touch/grab target without widening how it looks,
+   since background-clip keeps the visible color confined to the inner
+   content box. Sized and positioned by updateScrollThumb() in app.js, on
+   every scroll and whenever the list's content changes. */
+.scroll-thumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* box-sizing: border-box (global reset above) means padding eats into
+     width rather than adding to it — 32px total minus 10px padding each
+     side leaves exactly the intended 12px visible content-box width. */
+  width: 40px;
+  padding: 0 0px; /* wider grab target than the visible bar */
+  background: #fff;
+  background-clip: content-box;
+  border-radius: 4px;
+  cursor: grab;
+  touch-action: none; /* we drive scrolling ourselves while dragging; don't let the browser also try to pan/zoom */
+  display: none;
+}
+
+.scroll-thumb:active {
+  cursor: grabbing;
 }
 
 #song-list li {
@@ -195,25 +239,4 @@ h1 {
 .song-info {
   font-size: 0.85rem;
   color: #aaa;
-}
-/* Width of the entire vertical scrollbar */
-::-webkit-scrollbar {
-  width: 30px; 
-}
-
-/* The track (background) of the scrollbar */
-::-webkit-scrollbar-track {
-  background: #fff;
-  border-radius: 6px;
-}
-
-/* The draggable scrolling handle (thumb) */
-::-webkit-scrollbar-thumb {
-  background: #aaa;
-  border-radius: 6px;
-}
-
-/* Hover state for the thumb */
-::-webkit-scrollbar-thumb:hover {
-  background: #111;
 }
