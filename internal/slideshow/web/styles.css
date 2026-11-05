@@ -22,4 +22,5 @@ html, body {
 
 .slide.visible {
   opacity: 1;
+  transition: opacity 2s ease-in-out;
 }

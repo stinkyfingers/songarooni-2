@@ -46,7 +46,7 @@
     if (isVideo(url)) {
       el = document.createElement("video");
       el.autoplay = true;
-      el.loop = true;
+      el.loop = true; // safety net only — scheduleNext advances after one real play-through
       el.muted = true;
       el.playsInline = true; // avoid iOS/Safari forcing fullscreen takeover on autoplay
     } else {
@@ -55,6 +55,24 @@
     el.className = "slide";
     el.src = url;
     return el;
+  }
+
+  // How long el should stay on screen before advancing: a video's own
+  // duration (now known — this runs at "loadeddata" time, after
+  // "loadedmetadata" has already fired), or the configured interval for
+  // everything else, including a video whose duration never resolves to a
+  // real number (some files briefly report Infinity/NaN).
+  function dwellMs(el) {
+    if (el.tagName === "VIDEO" && isFinite(el.duration) && el.duration > 0) {
+      return el.duration * 1000;
+    }
+    return intervalMs;
+  }
+
+  function scheduleNext(el) {
+    if (cycleTimer) clearTimeout(cycleTimer);
+    if (urls.length <= 1) return; // nothing else to cycle to
+    cycleTimer = setTimeout(advance, dwellMs(el));
   }
 
   function showSlide(url) {
@@ -66,9 +84,11 @@
       layers[activeLayer].classList.remove("visible");
       newEl.classList.add("visible");
       activeLayer = nextLayer;
+      scheduleNext(newEl); // dwell time starts now, once it's actually showing
     };
     // Images fire "load"; video elements don't — "loadeddata" is their
-    // equivalent "ready to show a frame" event.
+    // equivalent "ready to show a frame" event, and by then .duration is
+    // already known.
     if (newEl.tagName === "VIDEO") {
       newEl.addEventListener("loadeddata", reveal, { once: true });
     } else {
@@ -81,17 +101,15 @@
 
   function advance() {
     if (urls.length === 0) return;
-    showSlide(urls[slideIdx]);
+    var url = urls[slideIdx];
     slideIdx = (slideIdx + 1) % urls.length;
+    showSlide(url);
   }
 
   function restartCycle() {
-    if (cycleTimer) clearInterval(cycleTimer);
+    if (cycleTimer) clearTimeout(cycleTimer);
     slideIdx = 0;
-    advance();
-    if (urls.length > 1) {
-      cycleTimer = setInterval(advance, intervalMs);
-    }
+    advance(); // shows the first slide; its own reveal() schedules the next
   }
 
   function loadSlides(id) {

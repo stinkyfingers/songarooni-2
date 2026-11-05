@@ -8,4 +8,5 @@ test_images/
 generated_band_photos/
 songs.csv
 config.prod.yaml
+runbook.txt
 .DS_Store
