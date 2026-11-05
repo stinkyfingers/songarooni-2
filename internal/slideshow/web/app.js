@@ -81,6 +81,13 @@
     var newEl = makeLayerElement(url);
 
     var reveal = function () {
+      // Force a reflow so the browser commits newEl's current (not yet
+      // "visible") state as an actual painted frame before the next line
+      // changes it. Without this, a load that resolves fast enough (an
+      // already-cached image, a very short video) can have the insertion
+      // and the class change coalesced into a single style recalculation —
+      // no transition happens, it just snaps straight to the end state.
+      void newEl.offsetWidth;
       layers[activeLayer].classList.remove("visible");
       newEl.classList.add("visible");
       activeLayer = nextLayer;
