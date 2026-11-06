@@ -45,10 +45,17 @@
     var el;
     if (isVideo(url)) {
       el = document.createElement("video");
-      el.autoplay = true;
+      // No autoplay: on slow hardware (the Pi, not a desktop), decoding can
+      // lag far enough behind that autoplay has already advanced playback
+      // a second or more before our "loadeddata" handler even runs — the
+      // video is then revealed mid-playback, plays to the end, loops back
+      // to the true start, and gets cut off there by scheduleNext before
+      // finishing. Starting playback ourselves in reveal() below, at the
+      // exact moment it's actually shown, is what fixes that.
       el.loop = true; // safety net only — scheduleNext advances after one real play-through
       el.muted = true;
       el.playsInline = true; // avoid iOS/Safari forcing fullscreen takeover on autoplay
+      el.preload = "auto"; // buffer eagerly rather than conservatively — reduces jerky playback on the Pi
     } else {
       el = document.createElement("img");
     }
@@ -88,9 +95,25 @@
       // and the class change coalesced into a single style recalculation —
       // no transition happens, it just snaps straight to the end state.
       void newEl.offsetWidth;
+      // Pausing the outgoing element (if it's a video) here, rather than
+      // leaving it to decode/play in the background until garbage
+      // collected, frees up decode capacity right when it matters most —
+      // the crossfade below briefly has two layers on screen at once,
+      // and the Pi can barely keep up decoding even one video smoothly.
+      if (layers[activeLayer].tagName === "VIDEO") {
+        layers[activeLayer].pause();
+      }
       layers[activeLayer].classList.remove("visible");
       newEl.classList.add("visible");
       activeLayer = nextLayer;
+      if (newEl.tagName === "VIDEO") {
+        // Explicit start, not autoplay — see makeLayerElement's comment:
+        // this guarantees playback visibly begins at frame 0 the moment
+        // it's actually revealed, regardless of how long decoding took to
+        // get here.
+        newEl.currentTime = 0;
+        newEl.play();
+      }
       scheduleNext(newEl); // dwell time starts now, once it's actually showing
     };
     // Images fire "load"; video elements don't — "loadeddata" is their
