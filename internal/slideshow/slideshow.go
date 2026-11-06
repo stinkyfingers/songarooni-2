@@ -25,6 +25,9 @@ import (
 //go:embed logo.png
 var embeddedLogo []byte
 
+//go:embed bkgd.jpg
+var embeddedBkgd []byte
+
 // Slideshow serves the kiosk page over HTTP. It holds no "currently
 // showing" state of its own — the page it serves polls the main server for
 // that itself (see poll() in web/app.js) — so unlike a push-driven display,
@@ -61,6 +64,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /config", s.handleConfig)
 	mux.HandleFunc("GET /logo.png", s.handleLogo)
+	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
 	mux.HandleFunc("GET /slides", s.handleSlides)
 	mux.Handle("GET /images/song/", http.StripPrefix("/images/song/", http.FileServer(http.Dir(s.parentDir))))
 	mux.Handle("GET /images/default/", http.StripPrefix("/images/default/", http.FileServer(http.Dir(s.defaultDir))))
@@ -98,6 +102,11 @@ func (s *Slideshow) handleConfig(w http.ResponseWriter, r *http.Request) {
 func (s *Slideshow) handleLogo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	_, _ = w.Write(embeddedLogo)
+}
+
+func (s *Slideshow) handleBkgd(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/jpeg")
+	_, _ = w.Write(embeddedBkgd)
 }
 
 // handleSlides resolves ?id=<song id> to its ordered slide URLs (JSON
