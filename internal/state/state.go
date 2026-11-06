@@ -75,7 +75,7 @@ type Controller struct {
 // New builds a Controller over catalog, driving clicker and display. A
 // synthetic "Default" entry (id slides.DefaultID) is always added, for
 // clicking at a manually-set tempo on songs that aren't in the catalog —
-// songs.LoadFile never produces id 0 itself (ids must be positive), so this
+// songs.LoadFile never produces id 0 itself, so this
 // can't collide with a real song.
 func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controller {
 	defaultSong := &songs.Song{
@@ -105,7 +105,7 @@ func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controll
 }
 
 // Songs returns the song catalog (including the synthetic Default entry)
-// in songs.csv order, Default first.
+// in songs file order, Default first.
 func (c *Controller) Songs() []songs.Song {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -285,7 +285,7 @@ func (c *Controller) SetMuted(muted bool) error {
 }
 
 // SetDefaultTempo sets the Default entry's tempo (unlike every real song's,
-// which stays fixed from songs.csv). If Default is the song currently
+// which stays fixed from songs file). If Default is the song currently
 // playing, the click is restarted at the new tempo immediately.
 func (c *Controller) SetDefaultTempo(bpm int) error {
 	c.mu.Lock()

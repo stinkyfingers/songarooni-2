@@ -43,13 +43,11 @@ func main() {
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	catalog, extraFields, err := songs.LoadFile(cfg.SongsCSV, cfg.SlideDir)
+	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir)
 	if err != nil {
-		log.Fatalf("songs.csv invalid, refusing to start:\n%v", err)
+		log.Fatalf("songs.json invalid, refusing to start:\n%v", err)
 	}
-	log.Printf("loaded %d songs from %s (extra fields: %v)", len(catalog), cfg.SongsCSV, extraFields)
-
-	displayedFields := validDisplayedFields(cfg.DisplayedFields, extraFields)
+	log.Printf("loaded %d songs from %s", len(catalog), cfg.SongsFile)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -63,7 +61,7 @@ func main() {
 	controller := state.New(catalog, clicker, display)
 
 	go func() {
-		if err := control_panel.Run(ctx, controller, extraFields, displayedFields, cfg); err != nil && ctx.Err() == nil {
+		if err := control_panel.Run(ctx, controller, cfg); err != nil && ctx.Err() == nil {
 			log.Fatalf("control panel failed: %v", err)
 		}
 	}()
@@ -127,25 +125,6 @@ func clampVolume(v float64) float64 {
 	default:
 		return v
 	}
-}
-
-// validDisplayedFields filters configured to only the names that actually
-// exist in extraFields, logging a warning for any that don't — a typo in
-// config.yaml's displayed_fields shouldn't refuse to start the app.
-func validDisplayedFields(configured, extraFields []string) []string {
-	known := make(map[string]bool, len(extraFields))
-	for _, f := range extraFields {
-		known[f] = true
-	}
-	out := []string{} // never nil: see the matching note in songs.LoadFile
-	for _, f := range configured {
-		if known[f] {
-			out = append(out, f)
-		} else {
-			log.Printf("config: displayed_fields entry %q is not a songs.csv column; ignoring it", f)
-		}
-	}
-	return out
 }
 
 type noopDisplay struct{}

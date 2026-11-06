@@ -13,7 +13,7 @@ import (
 )
 
 // DefaultID is the sentinel song id that selects the "default" subdirectory
-// instead of a specific song's slides. Real song ids from songs.csv start at
+// instead of a specific song's slides. Real song ids from songs file start at
 // 1, so 0 is never a valid song id.
 const DefaultID = 0
 

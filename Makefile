@@ -40,7 +40,7 @@ test:
 # and must never land on the Pi — deploying it overwrites the real settings.
 deploy: build-pi
 	rsync -av \
-		$(DIST)/$(BINARY) songs.csv \
+		$(DIST)/$(BINARY) songs.json \
 		scripts/start.sh scripts/connect-pedal.sh scripts/songarooni.desktop \
 		$(HOST):$(REMOTE_DIR)
 	rsync -av config.prod.yaml $(HOST):$(REMOTE_DIR)config.yaml

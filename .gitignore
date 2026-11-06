@@ -10,3 +10,4 @@ songs.csv
 config.prod.yaml
 runbook.txt
 .DS_Store
+songs.json

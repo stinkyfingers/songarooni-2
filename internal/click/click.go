@@ -60,7 +60,7 @@ func (n *NoopClicker) Stop() error {
 // (rather than linear) decay are what actually fixed that, not amplitude.
 func renderBeat(tempo int, amplitude float64, toneHz float64) []byte {
 	const (
-		burstSeconds = .5
+		burstSeconds = .05
 		// Fraction of peak the envelope has decayed to by the end of the
 		// burst, so the buffer reaches the zero-padding with no audible
 		// discontinuity (pop).

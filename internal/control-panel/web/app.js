@@ -3,7 +3,6 @@ const DEFAULT_SONG_ID = 0;
 const MAX_TITLE_LENGTH = 20; // truncate long titles in the "Now" display
 
 let songs = [];
-let fields = { extra: [], displayed: [] };
 let sortBy = ''; // '' = catalog order, 'title', 'tempo', or an extra field name
 let lastScrolledSelectedId = null; // only auto-scroll when the selection actually changes, not on every poll
 let state = {
@@ -56,7 +55,6 @@ function populateSortOptions() {
   const options = [
     { value: 'title', label: 'TITLE' },
     { value: 'tempo', label: 'TEMPO' },
-    ...fields.extra.map((name) => ({ value: name, label: name.toUpperCase() })),
   ];
   el.sortBy.innerHTML = '';
   for (const opt of options) {
@@ -99,7 +97,7 @@ function renderList() {
     info.className = 'song-info';
     // Default's tempo is user-adjustable (see the tempo box below), so a
     // static number in the list would just go stale — only show BPM for
-    // real songs, whose tempo is fixed from songs.csv.
+    // real songs, whose tempo is fixed from songs.json.
     title.textContent =
       ((song.id === DEFAULT_SONG_ID) || configuration.no_click) ?
         song.title :
@@ -107,19 +105,19 @@ function renderList() {
 
     info.textContent = song.id === DEFAULT_SONG_ID ?
       '' :
-      `${song?.extra?.artist} - ${song?.extra?.genre}${song.hasImages ? '' : ' (no images)'}`.trim();
+      `${song?.artist} - ${song?.genre}${song.has_images ? '' : ' (no images)'}`.trim();
     li.appendChild(title);
     li.appendChild(info);
 
-    const shown = fields.displayed
-      .map((name) => song.extra && song.extra[name])
-      .filter(Boolean);
-    if (shown.length) {
-      const meta = document.createElement('div');
-      meta.className = 'song-meta';
-      meta.textContent = shown.join(' · ');
-      li.appendChild(meta);
-    }
+    // const shown = fields.displayed
+    //   .map((name) => song.extra && song.extra[name])
+    //   .filter(Boolean);
+    // if (shown.length) {
+    //   const meta = document.createElement('div');
+    //   meta.className = 'song-meta';
+    //   meta.textContent = shown.join(' · ');
+    //   li.appendChild(meta);
+    // }
 
     li.dataset.id = song.id;
     li.classList.toggle('selected', song.id === state.selectedSongId);
@@ -366,16 +364,11 @@ document.addEventListener('keydown', (e) => {
 
 (async function init() {
   try {
-    [songs, fields, state, configuration] = await Promise.all([
+    [songs, state, configuration] = await Promise.all([
       api('GET', '/api/songs'),
-      api('GET', '/api/fields'),
       api('GET', '/api/state'),
       api('GET', '/api/config')
     ]);
-    // Defensive: an API field that should always be an array must not be
-    // allowed to take the whole page down if it's ever null instead.
-    fields.extra = fields.extra || [];
-    fields.displayed = fields.displayed || [];
     populateSortOptions();
     renderList();
     renderState();

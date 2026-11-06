@@ -22,7 +22,7 @@ func (fakeDisplay) Show(id int) {}
 func testHandler() http.Handler {
 	catalog := []songs.Song{{ID: 1, Title: "Song One", Slides: "song-one", Tempo: 120}}
 	controller := state.New(catalog, fakeClicker{}, fakeDisplay{})
-	return apiHandler(controller, nil, nil, config.Config{})
+	return apiHandler(controller, config.Config{})
 }
 
 // The slideshow kiosk page polls these two endpoints cross-origin (it runs
@@ -39,20 +39,5 @@ func TestStateAndSongsAllowCrossOrigin(t *testing.T) {
 		if got := w.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 			t.Errorf("%s: expected Access-Control-Allow-Origin: *, got %q", path, got)
 		}
-	}
-}
-
-// The CORS header is scoped deliberately — not applied blanket across
-// every route — so confirm an endpoint that doesn't need it doesn't carry
-// it either, catching an accidental "just allow everything" regression.
-func TestFieldsDoesNotAllowCrossOrigin(t *testing.T) {
-	h := testHandler()
-
-	req := httptest.NewRequest("GET", "/api/fields", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-
-	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Errorf("/api/fields: expected no Access-Control-Allow-Origin header, got %q", got)
 	}
 }

@@ -11,19 +11,18 @@ import (
 )
 
 type Config struct {
-	Addr                 string   `yaml:"addr" json:"addr"`                                     // HTTP listen address, e.g. ":8080"
-	SongsCSV             string   `yaml:"songs_csv" json:"songs_csv"`                           // path to songs.csv
-	SlideDir             string   `yaml:"slide_dir" json:"slide_dir"`                           // base directory containing per-song slide subdirectories
-	DefaultSlideshow     string   `yaml:"default_slideshow" json:"default_slideshow"`           // directory of non-song-specific slides: the Default button, and the fallback for an unknown/missing song deck
-	SlideIntervalSeconds int      `yaml:"slide_interval_seconds" json:"slide_interval_seconds"` // seconds per slide before crossfading to the next
-	LogoFrequency        int      `yaml:"logo_frequency" json:"logo_frequency"`                 // insert the logo after every N slides (<=0 disables it)
-	AudioDevice          string   `yaml:"audio_device" json:"audio_device"`                     // ALSA device name for the click, e.g. "default" or "hw:1,0"
-	ClickVolume          float64  `yaml:"click_volume" json:"click_volume"`                     // click loudness, 0 (silent) to 1 (full scale)
-	ClickFrequency       float64  `yaml:"click_frequency" json:"click_frequency"`               // click tone frequency in Hz, e.g. 1800
-	LogFile              string   `yaml:"log_file" json:"log_file"`                             // path to the truncated-on-startup log file
-	DisplayedFields      []string `yaml:"displayed_fields" json:"displayed_fields"`             // which extra songs.csv columns to show in the phone's song list (empty: none)
-	NoKiosk              bool     `yaml:"no_kiosk" json:"no_kiosk"`                             // if true, launch a regular, non-kiosk browser instead of the slideshow kiosk
-	NoClick              bool     `yaml:"no_click" json:"no_click"`                             // if true, don't play the click sound at all (for testing without audio)
+	Addr                 string  `yaml:"addr" json:"addr"`                                     // HTTP listen address, e.g. ":8080"
+	SongsFile            string  `yaml:"songs_file" json:"songs_file"`                         // path to songs.json
+	SlideDir             string  `yaml:"slide_dir" json:"slide_dir"`                           // base directory containing per-song slide subdirectories
+	DefaultSlideshow     string  `yaml:"default_slideshow" json:"default_slideshow"`           // directory of non-song-specific slides: the Default button, and the fallback for an unknown/missing song deck
+	SlideIntervalSeconds int     `yaml:"slide_interval_seconds" json:"slide_interval_seconds"` // seconds per slide before crossfading to the next
+	LogoFrequency        int     `yaml:"logo_frequency" json:"logo_frequency"`                 // insert the logo after every N slides (<=0 disables it)
+	AudioDevice          string  `yaml:"audio_device" json:"audio_device"`                     // ALSA device name for the click, e.g. "default" or "hw:1,0"
+	ClickVolume          float64 `yaml:"click_volume" json:"click_volume"`                     // click loudness, 0 (silent) to 1 (full scale)
+	ClickFrequency       float64 `yaml:"click_frequency" json:"click_frequency"`               // click tone frequency in Hz, e.g. 1800
+	LogFile              string  `yaml:"log_file" json:"log_file"`                             // path to the truncated-on-startup log file
+	NoKiosk              bool    `yaml:"no_kiosk" json:"no_kiosk"`                             // if true, launch a regular, non-kiosk browser instead of the slideshow kiosk
+	NoClick              bool    `yaml:"no_click" json:"no_click"`                             // if true, don't play the click sound at all (for testing without audio)
 
 	// PedalDeviceName is matched case-insensitively against each /dev/input
 	// device's name (via EVIOCGNAME) to find the M-Vave Chocolate foot
@@ -50,7 +49,7 @@ type Config struct {
 func defaults() Config {
 	return Config{
 		Addr:                 ":8080",
-		SongsCSV:             "songs.csv",
+		SongsFile:            "songs.json",
 		SlideDir:             "media/slides",
 		DefaultSlideshow:     "media/default",
 		SlideIntervalSeconds: 20,

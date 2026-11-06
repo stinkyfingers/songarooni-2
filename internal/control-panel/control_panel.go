@@ -32,27 +32,11 @@ func mustSub(f embed.FS, dir string) fs.FS {
 	return sub
 }
 
-type songDTO struct {
-	ID        int               `json:"id"`
-	Title     string            `json:"title"`
-	Tempo     int               `json:"tempo"`
-	HasImages bool              `json:"hasImages"`
-	Extra     map[string]string `json:"extra,omitempty"`
-}
-
-type fieldsDTO struct {
-	Extra     []string `json:"extra"`     // every songs.csv column beyond id/title/slides/tempo
-	Displayed []string `json:"displayed"` // the subset config.yaml's displayed_fields selects for the list view
-}
-
 // Run builds the control panel's mux (the JSON API plus the embedded phone
-// page) and serves it on addr until ctx is done. extraFields is every
-// songs.csv column beyond the required four, in header order;
-// displayedFields is the config.yaml-selected subset to show in the
-// phone's list view.
-func Run(ctx context.Context, controller *state.Controller, extraFields, displayedFields []string, configuration config.Config) error {
+// page) and serves it on addr until ctx is done.
+func Run(ctx context.Context, controller *state.Controller, configuration config.Config) error {
 	mux := http.NewServeMux()
-	mux.Handle("/api/", apiHandler(controller, extraFields, displayedFields, configuration))
+	mux.Handle("/api/", apiHandler(controller, configuration))
 	mux.Handle("/", noCache(http.FileServerFS(webAssets)))
 
 	server := &http.Server{Addr: configuration.Addr, Handler: mux}
@@ -74,21 +58,13 @@ func Run(ctx context.Context, controller *state.Controller, extraFields, display
 	}
 }
 
-func apiHandler(controller *state.Controller, extraFields, displayedFields []string, configuration config.Config) http.Handler {
+func apiHandler(controller *state.Controller, configuration config.Config) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/songs", func(w http.ResponseWriter, r *http.Request) {
 		allowCrossOrigin(w) // the slideshow kiosk page, on its own port, polls this
 		catalog := controller.Songs()
-		dtos := make([]songDTO, len(catalog))
-		for i, s := range catalog {
-			dtos[i] = songDTO{ID: s.ID, Title: s.Title, Tempo: s.Tempo, HasImages: s.HasImages, Extra: s.Extra}
-		}
-		writeJSON(w, http.StatusOK, dtos)
-	})
-
-	mux.HandleFunc("GET /api/fields", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, fieldsDTO{Extra: extraFields, Displayed: displayedFields})
+		writeJSON(w, http.StatusOK, catalog)
 	})
 
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
