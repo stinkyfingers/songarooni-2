@@ -66,7 +66,7 @@ The upstream link only ever provides internet access to devices behind the route
 
 Two things worth doing alongside this, regardless of whether mDNS works reliably on a given venue's network:
 - **Give the Pi a static DHCP reservation** on the router (bind its MAC address to a fixed IP in the router's admin page) — so even typing the numeric IP as a fallback, it's always the same one, rather than potentially changing after a reboot.
-- **"Add to Home Screen" on the phone** once the URL (name or IP) is confirmed working — turns it into a one-tap icon, which sidesteps the "cumbersome to type" problem entirely regardless of which naming approach you use.
+- **"Add to Home Screen" on the phone** once the URL (name or IP) is confirmed working — turns it into a one-tap icon, which sidesteps the "cumbersome to type" problem entirely regardless of which naming approach you use. **Double-check the address bar shows `http://`, not `https://`, before adding it** — Safari/iOS will sometimes silently upgrade a typed or remembered address to `https://`, and since `songarooni` never serves TLS, that fails (often just hanging, with no clear error) rather than falling back to `http://`. A Home Screen icon saved mid-upgrade bakes that broken `https://` URL in permanently.
 
 If a venue's network ever blocks mDNS (some router firmwares do, particularly on guest networks), the static-IP-plus-bookmark combination above is the dependable fallback.
 

@@ -52,7 +52,7 @@
       // to the true start, and gets cut off there by scheduleNext before
       // finishing. Starting playback ourselves in reveal() below, at the
       // exact moment it's actually shown, is what fixes that.
-      el.loop = true; // safety net only — scheduleNext advances after one real play-through
+      // el.loop = true; // safety net only — scheduleNext advances after one real play-through
       el.muted = true;
       el.playsInline = true; // avoid iOS/Safari forcing fullscreen takeover on autoplay
       el.preload = "auto"; // buffer eagerly rather than conservatively — reduces jerky playback on the Pi
