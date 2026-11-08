@@ -22,7 +22,8 @@ type Config struct {
 	ClickFrequency       float64 `yaml:"click_frequency" json:"click_frequency"`               // click tone frequency in Hz, e.g. 1800
 	LogFile              string  `yaml:"log_file" json:"log_file"`                             // path to the truncated-on-startup log file
 	NoKiosk              bool    `yaml:"no_kiosk" json:"no_kiosk"`                             // if true, launch a regular, non-kiosk browser instead of the slideshow kiosk
-	NoClick              bool    `yaml:"no_click" json:"no_click"`                             // if true, don't play the click sound at all (for testing without audio)
+	NoClick              bool    `yaml:"no_click" json:"no_click"`
+	IncludeEmptySongs    bool    `yaml:"include_empty_songs" json:"include_empty_songs"` // if true, include songs with no images
 
 	// PedalDeviceName is matched case-insensitively against each /dev/input
 	// device's name (via EVIOCGNAME) to find the M-Vave Chocolate foot

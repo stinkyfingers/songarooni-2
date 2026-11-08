@@ -26,6 +26,24 @@ Then on the Pi itself:
 
 See `plans/cross-compile-plan.md` for the full build/provisioning walkthrough, including installing `alsa-utils` on the Pi (and a Chromium-family browser for the venue display — see "Venue display" below).
 
+## Setting the Pi's hostname (`songarooni.local`)
+
+This is what actually makes `songarooni.local` resolve on the network — relevant any time you set up a new Pi, or need to repeat/change it.
+
+1. **Set the system hostname**, if it isn't already what you want:
+   ```bash
+   hostname   # check the current one
+   ```
+   If it's not `songarooni` (or whatever name you want): `sudo raspi-config` → System Options → Hostname, then reboot for it to fully take effect.
+
+2. **Make sure Avahi (mDNS) is installed and running** — this is what actually answers `<hostname>.local` lookups on the network; it's usually already present on Raspberry Pi OS Desktop images, but if not:
+   ```bash
+   sudo apt install avahi-daemon
+   sudo systemctl enable --now avahi-daemon
+   ```
+
+That's it — no other configuration needed. The hostname becomes `<hostname>.local` automatically; there's no separate "domain" to set. See "Network setup" below for the fallback if mDNS doesn't resolve reliably on a given venue's network (some router firmwares block it).
+
 ## Network setup
 
 The phone and the Pi need to share a private local network, with no reliance on internet access. Two options:
@@ -44,18 +62,7 @@ Connect the Pi to a router via Ethernet; the phone joins the router's Wi-Fi. Sim
 
 The upstream link only ever provides internet access to devices behind the router — it has no bearing on whether the Pi and phone can reach each other. If the upstream Wi-Fi drops entirely (or you never configure one), the router keeps serving its own `BandControl` network to the Pi and phone exactly the same either way, so there's no real downside to leaving the uplink configured even if you don't always need it.
 
-**Using a name instead of the router-assigned IP** (e.g. `http://songarooni.local:8080` instead of `http://192.168.x.x:8080`): Raspberry Pi OS ships mDNS (Avahi) for exactly this — no router configuration needed, and it's what makes `raspberrypi.local` work out of the box on a stock image.
-
-1. Confirm the Pi's hostname is what you want the name to be (one word, no spaces):
-   ```bash
-   hostname   # e.g. "songarooni" — if it's not, `sudo raspi-config` → System Options → Hostname
-   ```
-2. Make sure Avahi is installed and running (usually already is, on Raspberry Pi OS Desktop):
-   ```bash
-   sudo apt install avahi-daemon
-   sudo systemctl enable --now avahi-daemon
-   ```
-3. From the phone, navigate to `http://<hostname>.local:8080` (e.g. `http://songarooni.local:8080`) — no router changes required. iOS has first-class Bonjour/mDNS support built in, so this is reliably the easiest option given the phone side is always an iPhone here.
+**Using a name instead of the router-assigned IP** (e.g. `http://songarooni.local:8080` instead of `http://192.168.x.x:8080`): Raspberry Pi OS ships mDNS (Avahi) for exactly this — no router configuration needed, and it's what makes `raspberrypi.local` work out of the box on a stock image. See "Setting the Pi's hostname" above if it isn't already configured. Once it is, just navigate to `http://<hostname>.local:8080` from the phone (e.g. `http://songarooni.local:8080`) — iOS has first-class Bonjour/mDNS support built in, so this is reliably the easiest option given the phone side is always an iPhone here.
 
 Two things worth doing alongside this, regardless of whether mDNS works reliably on a given venue's network:
 - **Give the Pi a static DHCP reservation** on the router (bind its MAC address to a fixed IP in the router's admin page) — so even typing the numeric IP as a fallback, it's always the same one, rather than potentially changing after a reboot.
@@ -143,6 +150,23 @@ That's it — pedal keystrokes aren't handled by `triggerhappy` or read from a t
    chmod +x ~/Desktop/songarooni.desktop
    ```
    Then right-click the new desktop icon and choose "Trust this launcher" (or similar — exact wording varies by Raspberry Pi OS version) the first time; after that, double-clicking just runs it directly. `Terminal=false` in the launcher is deliberate — `start.sh` already detects a non-terminal stdout and relaunches itself inside one on its own, so the launcher doesn't need to wrap it in one too.
+
+## One-time Pi setup: GPU memory for smooth video
+
+The default GPU memory split (as little as 76M on some Raspberry Pi OS images) isn't enough for a video-heavy slideshow — Chromium will report `memory_throttled` on `chrome://gpu` and fall back to slower rendering paths, showing up as jerky video/transitions and occasional blank-white flashes.
+
+1. **Check the current split**: `vcgencmd get_mem gpu`.
+2. **Increase it** — add (or edit) this line in whichever of `/boot/firmware/config.txt` (current Raspberry Pi OS) or `/boot/config.txt` (older versions) your Pi actually boots from — check both with `grep -n gpu /boot/firmware/config.txt /boot/config.txt 2>/dev/null` first:
+   ```ini
+   gpu_mem=128
+   ```
+   Check total RAM first (`free -h`) before picking a number — 128 is a safe default on a 1GB Pi; 256 is fine on 2GB+. The exact directive name matters (`gpu_mem`, not `gpu`) and unknown keys are silently ignored, so a typo here produces no error at all, just no change.
+3. **Reboot** — this is a boot-time allocation, not something that can change live. `vcgencmd get_mem gpu` only reflects what was actually set at the last boot.
+4. **Confirm it took**: `vcgencmd get_mem gpu` should now show the new value, and `chrome://gpu` (reachable by temporarily setting `no_kiosk: true` in `config.yaml` for a normal, non-fullscreen window) should no longer show `memory_throttled`.
+
+**If video is still jerky after that**, two further things worth checking:
+- **Thermal throttling**: `vcgencmd measure_temp` and `vcgencmd get_throttled`. Decoding the latter: bit `0x4` means *currently* throttled, `0x2` means frequency *currently* capped — both low/0 is good; `0x20000`/`0x40000` etc. mean capping/throttling happened *at some point since boot*, historical only. Sustained video decode generates real heat; if temps are consistently near 80°C, a heatsink/fan is worth adding.
+- **Video encoding**: an oversized or high-profile H.264 encode can silently fall back to slow software decoding even with hardware decode available. Re-encoding at a resolution matching the actual display, Baseline or Main profile, moderate bitrate, is usually the single biggest win for a Pi 3/4-class board.
 
 ## Venue display: kiosk browser
 

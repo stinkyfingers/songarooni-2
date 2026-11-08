@@ -25,7 +25,7 @@ var supportedImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
 }
 
-func LoadJSON(filename, slideDir string) ([]Song, error) {
+func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -38,6 +38,8 @@ func LoadJSON(filename, slideDir string) ([]Song, error) {
 		return nil, err
 	}
 
+	var filteredSongs []Song
+
 	for i, song := range songs {
 		if err := validateSlideDir(slideDir, song.Slides); err != nil {
 			// A broken slide directory is a slides-only problem: warn and
@@ -46,15 +48,21 @@ func LoadJSON(filename, slideDir string) ([]Song, error) {
 			// the "default" deck at runtime when a song's directory isn't
 			// there.
 			log.Printf("slide validation: %s: %s", song.Title, err)
+
+			if includeEmptySongs {
+				songs[i].HasImages = false
+				filteredSongs = append(filteredSongs, songs[i])
+			}
 		} else {
 			songs[i].HasImages = true
+			filteredSongs = append(filteredSongs, songs[i])
 		}
 	}
-	sort.Slice(songs, func(i, j int) bool {
-		return strings.ToLower(songs[i].Title) < strings.ToLower(songs[j].Title)
+	sort.Slice(filteredSongs, func(i, j int) bool {
+		return strings.ToLower(filteredSongs[i].Title) < strings.ToLower(filteredSongs[j].Title)
 	})
 
-	return songs, nil
+	return filteredSongs, nil
 }
 
 // validateSlideDir confirms slideDir/slides exists and holds at least one

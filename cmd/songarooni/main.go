@@ -43,7 +43,7 @@ func main() {
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir)
+	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir, cfg.IncludeEmptySongs)
 	if err != nil {
 		log.Fatalf("songs.json invalid, refusing to start:\n%v", err)
 	}
