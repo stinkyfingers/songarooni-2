@@ -70,10 +70,11 @@
   // everything else, including a video whose duration never resolves to a
   // real number (some files briefly report Infinity/NaN).
   function dwellMs(el) {
+    const paddingMs = 2000; // add a couple seconds to let the fade-out finish before the next slide starts
     if (el.tagName === "VIDEO" && isFinite(el.duration) && el.duration > 0) {
-      return el.duration * 1000;
+      return el.duration * 1000 + paddingMs; // add a couple seconds to let the fade-out finish before the next slide starts
     }
-    return intervalMs;
+    return intervalMs + paddingMs;
   }
 
   function scheduleNext(el) {

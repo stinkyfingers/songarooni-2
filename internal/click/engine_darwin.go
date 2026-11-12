@@ -14,11 +14,12 @@ import (
 // macOS dev-convenience path only — the real deployment target is
 // Linux/aplay (see engine_linux.go).
 func New(device string, volume float64, frequency float64) Clicker {
+
 	if _, err := exec.LookPath("sox"); err != nil {
 		log.Printf("click: sox not found on PATH (try `brew install sox` to hear the click during development); using a silent no-op clicker (%v)", err)
 		return &NoopClicker{}
 	}
-	return &SoxClicker{volume: volume, frequency: frequency}
+	return &SoxClicker{volume: clampVolume(volume), frequency: frequency}
 }
 
 // SoxClicker pipes a looped one-beat PCM buffer into a sox subprocess,
@@ -108,4 +109,20 @@ func (s *SoxClicker) Stop() error {
 		return fmt.Errorf("click: stopping sox: %w", killErr)
 	}
 	return nil
+}
+
+// clampVolume keeps a misconfigured click_volume (negative, or above 1) from
+// turning into a crash or silent garbage in renderBeat — a bad volume value
+// should just play too loud/quiet, loudly logged, not take anything down.
+func clampVolume(v float64) float64 {
+	switch {
+	case v < 0:
+		log.Printf("config: click_volume %v is negative; using 0", v)
+		return 0
+	case v > 1:
+		log.Printf("config: click_volume %v is above 1; using 1", v)
+		return 1
+	default:
+		return v
+	}
 }

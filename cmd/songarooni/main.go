@@ -56,7 +56,7 @@ func main() {
 	var clicker click.Clicker
 	clicker = &click.NoopClicker{} // default to a no-op clicker if no supported audio player is found on PATH
 	if !cfg.NoClick {
-		clicker = click.New(cfg.AudioDevice, clampVolume(cfg.ClickVolume), cfg.ClickFrequency)
+		clicker = click.New(cfg.AudioDevice, cfg.ClickVolume, cfg.ClickFrequency)
 	}
 	controller := state.New(catalog, clicker, display)
 
@@ -111,21 +111,7 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	return noopDisplay{}
 }
 
-// clampVolume keeps a misconfigured click_volume (negative, or above 1) from
-// turning into a crash or silent garbage in renderBeat — a bad volume value
-// should just play too loud/quiet, loudly logged, not take anything down.
-func clampVolume(v float64) float64 {
-	switch {
-	case v < 0:
-		log.Printf("config: click_volume %v is negative; using 0", v)
-		return 0
-	case v > 1:
-		log.Printf("config: click_volume %v is above 1; using 1", v)
-		return 1
-	default:
-		return v
-	}
-}
+
 
 type noopDisplay struct{}
 
