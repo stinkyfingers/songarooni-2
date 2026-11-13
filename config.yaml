@@ -4,7 +4,6 @@
 addr: ":8080"
 songs_file: "songs.json"
 slide_dir: "./generated_band_photos"
-default_slideshow: "./generated_band_photos/default"
 slide_interval_seconds: 2
 logo_frequency: 5
 audio_device: "default"

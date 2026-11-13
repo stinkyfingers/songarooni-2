@@ -14,7 +14,6 @@ type Config struct {
 	Addr                 string  `yaml:"addr" json:"addr"`                                     // HTTP listen address, e.g. ":8080"
 	SongsFile            string  `yaml:"songs_file" json:"songs_file"`                         // path to songs.json
 	SlideDir             string  `yaml:"slide_dir" json:"slide_dir"`                           // base directory containing per-song slide subdirectories
-	DefaultSlideshow     string  `yaml:"default_slideshow" json:"default_slideshow"`           // directory of non-song-specific slides: the Default button, and the fallback for an unknown/missing song deck
 	SlideIntervalSeconds int     `yaml:"slide_interval_seconds" json:"slide_interval_seconds"` // seconds per slide before crossfading to the next
 	LogoFrequency        int     `yaml:"logo_frequency" json:"logo_frequency"`                 // insert the logo after every N slides (<=0 disables it)
 	CommercialFrequency  int     `yaml:"commercial_frequency" json:"commercial_frequency"`     // insert a commercial after every N slides (<=0 disables it)
@@ -53,7 +52,6 @@ func defaults() Config {
 		Addr:                 ":8080",
 		SongsFile:            "songs.json",
 		SlideDir:             "media/slides",
-		DefaultSlideshow:     "media/default",
 		SlideIntervalSeconds: 20,
 		LogoFrequency:        5,
 		CommercialFrequency:  5,

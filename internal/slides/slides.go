@@ -23,75 +23,42 @@ const DefaultID = 0
 // song id (which must be positive) or DefaultID.
 const LogoID = -1
 
-// Root identifies which configured directory a Deck's slides came from, so
-// a caller can map it to whatever representation it needs (an absolute
-// filesystem path for feh's img-list.txt, a bounded URL prefix for the
-// browser endpoint) without this package knowing about either.
-type Root int
-
-const (
-	SongRoot    Root = iota // parentDir/Subdir
-	DefaultRoot             // defaultDir
-)
-
-// Deck is one resolved song's ordered slides. Files is a list of filenames
-// relative to whichever root Base identifies (Subdir additionally joined in
-// for SongRoot); an empty string entry is a logo slide, not a real filename.
-// A LogoID resolution is the single-entry deck {Files: [""]} — Base/Subdir
-// are meaningless for it.
-type Deck struct {
-	Base   Root
-	Subdir string // only meaningful when Base == SongRoot
-	Files  []string
-}
-
 var supportedImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
 }
 
-// Resolve picks id's slide deck: LogoID is just the logo on its own;
-// DefaultID, an id with no entry in songMap, or a mapped id whose directory
-// doesn't exist under parentDir all fall back to defaultDir; otherwise
-// parentDir/songMap[id] is used. Only the default deck is shuffled — a
-// song's own slides keep their natural (alphabetical) order, matching
-// internal/slideshow's existing behavior, which only ever randomized the
-// fallback deck. If logoFrequency > 0, a logo slide is inserted after every
-// logoFrequency images.
-func Resolve(parentDir, defaultDir string, songMap map[int]string, logoFrequency, commercialFrequency, id int) (Deck, error) {
+// Resolve picks id's slide deck.
+func Resolve(parentDir string, songMap map[int]string, logoFrequency, commercialFrequency, id int) ([]string, error) {
 	if id == LogoID {
-		return Deck{Files: []string{""}}, nil
+		return []string{""}, nil
 	}
 
-	root := DefaultRoot
-	subdir := ""
-	dir := defaultDir
-	if sub, ok := songMap[id]; id != DefaultID && ok {
-		candidate := filepath.Join(parentDir, sub)
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			root = SongRoot
-			subdir = sub
-			dir = candidate
-		}
+	songDir, ok := songMap[id]
+	if !ok {
+		log.Println("slides: song id", id, "not found in songMap; falling back to default")
+		return []string{""}, nil
 	}
-
-	files, err := imageFiles(dir)
+	files, err := imageFiles(parentDir, songDir)
 	if err != nil {
-		return Deck{}, err
+		return nil, err
 	}
 
 	files = insertCommercials(parentDir, files, commercialFrequency)
 	files = insertLogo(files, logoFrequency)
 
 	rand.Shuffle(len(files), func(i, j int) { files[i], files[j] = files[j], files[i] })
+	fmt.Println("files", files) // TODO cleanup
 
-	return Deck{Base: root, Subdir: subdir, Files: files}, nil
+	log.Println("playing slides in", songDir)
+	return files, nil
 }
 
 // imageFiles lists dir's supported image files (recursively, like the
 // previous feh-only implementation), as paths relative to dir, in the
 // filesystem's natural walk order (alphabetical per directory level).
 // Hidden files (dotfiles) are skipped.
-func imageFiles(dir string) ([]string, error) {
+func imageFiles(parentDir, songDir string) ([]string, error) {
+	dir := filepath.Join(parentDir, songDir)
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("image directory not found: %s", dir)
@@ -115,7 +82,7 @@ func imageFiles(dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, filepath.Join(dir, rel))
+		files = append(files, filepath.Join(songDir, rel))
 		return nil
 	})
 	if err != nil {
@@ -144,7 +111,7 @@ func insertLogo(files []string, logoFrequency int) []string {
 }
 
 func insertCommercials(parentDir string, files []string, commercialFrequency int) []string {
-	commercials, err := imageFiles(filepath.Join(parentDir, "commercials"))
+	commercials, err := imageFiles(parentDir, "commercials")
 	if err != nil {
 		log.Printf("slides: no commercials directory found under %s: %v", parentDir, err)
 	} else {
