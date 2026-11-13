@@ -6,6 +6,7 @@ package slides
 
 import (
 	"fmt"
+	"log"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -56,7 +57,7 @@ var supportedImageExts = map[string]bool{
 // internal/slideshow's existing behavior, which only ever randomized the
 // fallback deck. If logoFrequency > 0, a logo slide is inserted after every
 // logoFrequency images.
-func Resolve(parentDir, defaultDir string, songMap map[int]string, logoFrequency, id int) (Deck, error) {
+func Resolve(parentDir, defaultDir string, songMap map[int]string, logoFrequency, commercialFrequency, id int) (Deck, error) {
 	if id == LogoID {
 		return Deck{Files: []string{""}}, nil
 	}
@@ -78,11 +79,12 @@ func Resolve(parentDir, defaultDir string, songMap map[int]string, logoFrequency
 		return Deck{}, err
 	}
 
-	if root == DefaultRoot {
-		rand.Shuffle(len(files), func(i, j int) { files[i], files[j] = files[j], files[i] })
-	}
+	files = insertCommercials(parentDir, files, commercialFrequency)
+	files = insertLogo(files, logoFrequency)
 
-	return Deck{Base: root, Subdir: subdir, Files: insertLogo(files, logoFrequency)}, nil
+	rand.Shuffle(len(files), func(i, j int) { files[i], files[j] = files[j], files[i] })
+
+	return Deck{Base: root, Subdir: subdir, Files: files}, nil
 }
 
 // imageFiles lists dir's supported image files (recursively, like the
@@ -113,7 +115,7 @@ func imageFiles(dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, rel)
+		files = append(files, filepath.Join(dir, rel))
 		return nil
 	})
 	if err != nil {
@@ -139,4 +141,25 @@ func insertLogo(files []string, logoFrequency int) []string {
 		}
 	}
 	return out
+}
+
+func insertCommercials(parentDir string, files []string, commercialFrequency int) []string {
+	commercials, err := imageFiles(filepath.Join(parentDir, "commercials"))
+	if err != nil {
+		log.Printf("slides: no commercials directory found under %s: %v", parentDir, err)
+	} else {
+		// select arbitrary commercials to insert
+		max := len(files) / commercialFrequency
+		if max > len(commercials) {
+			max = len(commercials)
+		}
+		if max > 0 {
+			rand.Shuffle(len(commercials), func(i, j int) { commercials[i], commercials[j] = commercials[j], commercials[i] })
+			commercials = commercials[:max]
+		} else {
+			commercials = nil
+		}
+		files = append(files, commercials...)
+	}
+	return files
 }

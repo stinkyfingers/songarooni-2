@@ -14,8 +14,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"net/http"
-	"net/url"
-	"path"
 	"path/filepath"
 	"strconv"
 
@@ -33,13 +31,14 @@ var embeddedBkgd []byte
 // that itself (see poll() in web/app.js) — so unlike a push-driven display,
 // the Controller it runs alongside just uses a no-op Display.
 type Slideshow struct {
-	addr       string
-	parentDir  string // config's SlideDir
-	defaultDir string // config's DefaultSlideshow
-	songMap    map[int]string
-	logoEvery  int
-	intervalMS int
-	apiPort    string // the main server's port, for the page's cross-origin poll of /api/state
+	addr            string
+	parentDir       string // config's SlideDir
+	defaultDir      string // config's DefaultSlideshow
+	songMap         map[int]string
+	logoEvery       int
+	commercialEvery int
+	intervalMS      int
+	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
 }
 
 // New prepares a Slideshow listening on addr. apiPort is the main server's
@@ -47,15 +46,16 @@ type Slideshow struct {
 // reaches the main server at the same hostname it reaches this one at,
 // just a different port, so only the port number needs to travel to the
 // page, not a full URL.
-func New(addr, parentDir, defaultDir string, songMap map[int]string, logoEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
+func New(addr, parentDir, defaultDir string, songMap map[int]string, logoEvery, commercialEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
 	return &Slideshow{
-		addr:       addr,
-		parentDir:  parentDir,
-		defaultDir: defaultDir,
-		songMap:    songMap,
-		logoEvery:  logoEvery,
-		intervalMS: slideIntervalSeconds * 1000,
-		apiPort:    apiPort,
+		addr:            addr,
+		parentDir:       parentDir,
+		defaultDir:      defaultDir,
+		songMap:         songMap,
+		logoEvery:       logoEvery,
+		commercialEvery: commercialEvery,
+		intervalMS:      slideIntervalSeconds * 1000,
+		apiPort:         apiPort,
 	}
 }
 
@@ -66,8 +66,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /logo.png", s.handleLogo)
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
 	mux.HandleFunc("GET /slides", s.handleSlides)
-	mux.Handle("GET /images/song/", http.StripPrefix("/images/song/", http.FileServer(http.Dir(s.parentDir))))
-	mux.Handle("GET /images/default/", http.StripPrefix("/images/default/", http.FileServer(http.Dir(s.defaultDir))))
+	mux.Handle("GET /images/", http.StripPrefix("/images/", http.FileServer(http.Dir(""))))
 	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css
 
 	server := &http.Server{Addr: s.addr, Handler: mux}
@@ -119,7 +118,7 @@ func (s *Slideshow) handleSlides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deck, err := slides.Resolve(s.parentDir, s.defaultDir, s.songMap, s.logoEvery, id)
+	deck, err := slides.Resolve(s.parentDir, s.defaultDir, s.songMap, s.logoEvery, s.commercialEvery, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -145,14 +144,5 @@ func slideURL(deck slides.Deck, file string) string {
 	if file == "" {
 		return "/logo.png"
 	}
-
-	prefix := "/images/default/"
-	rel := file
-	if deck.Base == slides.SongRoot {
-		prefix = "/images/song/"
-		rel = path.Join(deck.Subdir, file)
-	}
-
-	u := url.URL{Path: prefix + filepath.ToSlash(rel)}
-	return u.String()
+	return filepath.Join("/images", file)
 }

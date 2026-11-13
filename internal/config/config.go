@@ -17,6 +17,7 @@ type Config struct {
 	DefaultSlideshow     string  `yaml:"default_slideshow" json:"default_slideshow"`           // directory of non-song-specific slides: the Default button, and the fallback for an unknown/missing song deck
 	SlideIntervalSeconds int     `yaml:"slide_interval_seconds" json:"slide_interval_seconds"` // seconds per slide before crossfading to the next
 	LogoFrequency        int     `yaml:"logo_frequency" json:"logo_frequency"`                 // insert the logo after every N slides (<=0 disables it)
+	CommercialFrequency  int     `yaml:"commercial_frequency" json:"commercial_frequency"`     // insert a commercial after every N slides (<=0 disables it)
 	AudioDevice          string  `yaml:"audio_device" json:"audio_device"`                     // ALSA device name for the click, e.g. "default" or "hw:1,0"
 	ClickVolume          float64 `yaml:"click_volume" json:"click_volume"`                     // click loudness, 0 (silent) to 1 (full scale)
 	ClickFrequency       float64 `yaml:"click_frequency" json:"click_frequency"`               // click tone frequency in Hz, e.g. 1800
@@ -55,6 +56,7 @@ func defaults() Config {
 		DefaultSlideshow:     "media/default",
 		SlideIntervalSeconds: 20,
 		LogoFrequency:        5,
+		CommercialFrequency:  5,
 		AudioDevice:          "default",
 		ClickVolume:          1.0,
 		ClickFrequency:       1800,

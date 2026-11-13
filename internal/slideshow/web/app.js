@@ -12,6 +12,7 @@
   var cycleTimer = null;
   var lastShownID = null;
   var videoSuffixes = [".mp4"];
+  var consecutiveLoadErrors = 0; // guards against a tight retry loop if every slide 404s
 
   // Fetched once at startup from this server's own /config — apiPort (the
   // main server's port, for the cross-origin /api/state poll below) and
@@ -115,15 +116,31 @@
         newEl.currentTime = 0;
         newEl.play();
       }
+      consecutiveLoadErrors = 0;
       scheduleNext(newEl); // dwell time starts now, once it's actually showing
+    };
+    // A missing file (404, bad codec, etc.) fires "error" instead of
+    // "load"/"loadeddata" — reveal() never runs, so nothing would ever
+    // advance past it without this. Skip straight to the next slide; if
+    // every slide in the list is bad, fall back to waiting a normal
+    // interval between attempts instead of hammering the server.
+    var onLoadError = function () {
+      consecutiveLoadErrors++;
+      if (consecutiveLoadErrors >= Math.max(urls.length, 1)) {
+        cycleTimer = setTimeout(advance, intervalMs);
+      } else {
+        advance();
+      }
     };
     // Images fire "load"; video elements don't — "loadeddata" is their
     // equivalent "ready to show a frame" event, and by then .duration is
     // already known.
     if (newEl.tagName === "VIDEO") {
       newEl.addEventListener("loadeddata", reveal, { once: true });
+      newEl.addEventListener("error", onLoadError, { once: true });
     } else {
       newEl.onload = reveal;
+      newEl.onerror = onLoadError;
     }
 
     oldEl.parentNode.replaceChild(newEl, oldEl);
