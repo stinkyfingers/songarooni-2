@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"songarooni/internal/slides"
 )
 
 func writeImage(t *testing.T, dir, name string) {
@@ -21,7 +19,7 @@ func writeImage(t *testing.T, dir, name string) {
 	}
 }
 
-func testSlideshow(t *testing.T) (*Slideshow, string, string) {
+func testSlideshow(t *testing.T) (*Slideshow, string) {
 	t.Helper()
 	root := t.TempDir()
 	parentDir := filepath.Join(root, "songs")
@@ -30,12 +28,12 @@ func testSlideshow(t *testing.T) (*Slideshow, string, string) {
 	writeImage(t, defaultDir, "d.png")
 
 	songMap := map[int]string{1: "song-one"}
-	s := New(":0", parentDir, defaultDir, songMap, 0, 20, "8080")
-	return s, parentDir, defaultDir
+	s := New(":0", parentDir, songMap, 0, 1, 20, "8080")
+	return s, parentDir
 }
 
 func TestHandleSlidesResolvesKnownSong(t *testing.T) {
-	s, _, _ := testSlideshow(t)
+	s, _ := testSlideshow(t)
 
 	req := httptest.NewRequest("GET", "/slides?id=1", nil)
 	w := httptest.NewRecorder()
@@ -48,13 +46,13 @@ func TestHandleSlidesResolvesKnownSong(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &urls); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(urls) != 1 || urls[0] != "/images/song/song-one/1.png" {
-		t.Fatalf("expected [/images/song/song-one/1.png], got %v", urls)
+	if len(urls) != 1 || urls[0] != "/images/song-one/1.png" {
+		t.Fatalf("expected [/images/song-one/1.png], got %v", urls)
 	}
 }
 
 func TestHandleSlidesResolvesDefault(t *testing.T) {
-	s, _, _ := testSlideshow(t)
+	s, _ := testSlideshow(t)
 
 	req := httptest.NewRequest("GET", "/slides?id=0", nil)
 	w := httptest.NewRecorder()
@@ -64,13 +62,13 @@ func TestHandleSlidesResolvesDefault(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &urls); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(urls) != 1 || urls[0] != "/images/default/d.png" {
-		t.Fatalf("expected [/images/default/d.png], got %v", urls)
+	if len(urls) != 1 || urls[0] != "/logo.png" {
+		t.Fatalf("expected [/logo.png], got %v", urls)
 	}
 }
 
 func TestHandleSlidesResolvesLogo(t *testing.T) {
-	s, _, _ := testSlideshow(t)
+	s, _ := testSlideshow(t)
 
 	req := httptest.NewRequest("GET", "/slides?id=-1", nil)
 	w := httptest.NewRecorder()
@@ -86,7 +84,7 @@ func TestHandleSlidesResolvesLogo(t *testing.T) {
 }
 
 func TestHandleSlidesRejectsMissingID(t *testing.T) {
-	s, _, _ := testSlideshow(t)
+	s, _ := testSlideshow(t)
 
 	req := httptest.NewRequest("GET", "/slides", nil)
 	w := httptest.NewRecorder()
@@ -97,17 +95,8 @@ func TestHandleSlidesRejectsMissingID(t *testing.T) {
 	}
 }
 
-func TestSlideURLEscapesSpecialCharacters(t *testing.T) {
-	deck := slides.Deck{Base: slides.SongRoot, Subdir: "song one"}
-	got := slideURL(deck, "slide #1.png")
-	want := "/images/song/song%20one/slide%20%231.png"
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
-	}
-}
-
 func TestHandleLogoServesEmbeddedPNG(t *testing.T) {
-	s, _, _ := testSlideshow(t)
+	s, _ := testSlideshow(t)
 
 	req := httptest.NewRequest("GET", "/logo.png", nil)
 	w := httptest.NewRecorder()
@@ -125,7 +114,7 @@ func TestHandleLogoServesEmbeddedPNG(t *testing.T) {
 }
 
 func TestHandleConfigReturnsAPIPortAndInterval(t *testing.T) {
-	s, _, _ := testSlideshow(t)
+	s, _ := testSlideshow(t)
 
 	req := httptest.NewRequest("GET", "/config", nil)
 	w := httptest.NewRecorder()

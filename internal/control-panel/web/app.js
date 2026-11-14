@@ -103,21 +103,11 @@ function renderList() {
         song.title :
         `${song.title} — ${song.tempo} BPM`.trim();
 
-    info.textContent = song.id === DEFAULT_SONG_ID ?
+    info.textContent = song.id === DEFAULT_SONG_ID || (!song.artist && !song.genre) ?
       '' :
       `${song?.artist} - ${song?.genre}${song.has_images ? '' : ' (no images)'}`.trim();
     li.appendChild(title);
     li.appendChild(info);
-
-    // const shown = fields.displayed
-    //   .map((name) => song.extra && song.extra[name])
-    //   .filter(Boolean);
-    // if (shown.length) {
-    //   const meta = document.createElement('div');
-    //   meta.className = 'song-meta';
-    //   meta.textContent = shown.join(' · ');
-    //   li.appendChild(meta);
-    // }
 
     li.dataset.id = song.id;
     li.classList.toggle('selected', song.id === state.selectedSongId);
@@ -199,10 +189,15 @@ function renderState() {
     el.nowTitle.textContent = 'No song selected';
     el.nowTempo.textContent = '';
   }
+  if (state.no_click || !state.playingTempo) {
+    el.nowTempo.style.display = 'none';
+  } else {
+    el.nowTempo.style.display = '';
+  }
 
   el.upNext.textContent =
     state.running && state.selectedSongId !== state.playingSongId
-      ? `Up next: ${state.selectedTitle} — ${state.selectedTempo} BPM`
+      ? `Up next: ${state.selectedTitle}`
       : '';
 
   const defaultSelected = state.hasSelection && state.selectedSongId === DEFAULT_SONG_ID;

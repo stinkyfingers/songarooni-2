@@ -20,130 +20,87 @@ func writeImages(t *testing.T, dir string, names ...string) {
 }
 
 func TestResolveLogoID(t *testing.T) {
-	deck, err := Resolve("/nonexistent", "/nonexistent", nil, 0, LogoID)
+	files, err := Resolve("/nonexistent", nil, 0, 0, LogoID)
 	if err != nil {
 		t.Fatalf("Resolve(LogoID): %v", err)
 	}
-	if len(deck.Files) != 1 || deck.Files[0] != "" {
-		t.Fatalf("expected the lone logo marker, got %+v", deck)
+	if len(files) != 1 || files[0] != "" {
+		t.Fatalf("expected the lone logo marker, got %+v", files)
 	}
 }
 
-func TestResolveDefaultID(t *testing.T) {
-	root := t.TempDir()
-	defaultDir := filepath.Join(root, "default")
-	writeImages(t, defaultDir, "a.png", "b.jpg")
-
-	deck, err := Resolve(filepath.Join(root, "songs"), defaultDir, nil, 0, DefaultID)
-	if err != nil {
-		t.Fatalf("Resolve(DefaultID): %v", err)
-	}
-	if deck.Base != DefaultRoot {
-		t.Fatalf("expected DefaultRoot, got %v", deck.Base)
-	}
-	if len(deck.Files) != 2 {
-		t.Fatalf("expected 2 files, got %+v", deck.Files)
-	}
-}
-
-func TestResolveKnownSongUsesItsOwnDirectory(t *testing.T) {
-	root := t.TempDir()
-	parentDir := filepath.Join(root, "songs")
-	defaultDir := filepath.Join(root, "default")
-	writeImages(t, filepath.Join(parentDir, "song-one"), "1.png", "2.png")
-	writeImages(t, defaultDir, "d.png")
-
-	songMap := map[int]string{1: "song-one"}
-	deck, err := Resolve(parentDir, defaultDir, songMap, 0, 1)
-	if err != nil {
-		t.Fatalf("Resolve(1): %v", err)
-	}
-	if deck.Base != SongRoot || deck.Subdir != "song-one" {
-		t.Fatalf("expected SongRoot/song-one, got %+v", deck)
-	}
-	got := append([]string(nil), deck.Files...)
-	sort.Strings(got)
-	if len(got) != 2 || got[0] != "1.png" || got[1] != "2.png" {
-		t.Fatalf("expected [1.png 2.png], got %v", got)
-	}
-}
-
-// A song's own deck keeps its natural (alphabetical) order — only the
-// default deck is randomized. With Go's shuffle seeded by the runtime, the
-// only reliable way to assert "not shuffled" is exact order equality,
-// repeated to rule out coincidental matches.
-func TestResolveSongDeckIsNotShuffled(t *testing.T) {
-	root := t.TempDir()
-	parentDir := filepath.Join(root, "songs")
-	defaultDir := filepath.Join(root, "default")
-	writeImages(t, filepath.Join(parentDir, "song-one"), "1.png", "2.png", "3.png", "4.png", "5.png")
-	writeImages(t, defaultDir, "d.png")
-
-	songMap := map[int]string{1: "song-one"}
-	for i := 0; i < 10; i++ {
-		deck, err := Resolve(parentDir, defaultDir, songMap, 0, 1)
-		if err != nil {
-			t.Fatalf("Resolve(1): %v", err)
-		}
-		want := []string{"1.png", "2.png", "3.png", "4.png", "5.png"}
-		if len(deck.Files) != len(want) {
-			t.Fatalf("expected %v, got %v", want, deck.Files)
-		}
-		for i, f := range want {
-			if deck.Files[i] != f {
-				t.Fatalf("expected song deck in natural order %v, got %v", want, deck.Files)
-			}
-		}
-	}
-}
-
-func TestResolveFallsBackToDefaultWhenSongDirMissing(t *testing.T) {
-	root := t.TempDir()
-	parentDir := filepath.Join(root, "songs")
-	defaultDir := filepath.Join(root, "default")
-	writeImages(t, defaultDir, "d.png")
-	// No directory created for song id 1's mapped subdirectory.
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	songMap := map[int]string{1: "does-not-exist"}
-	deck, err := Resolve(parentDir, defaultDir, songMap, 0, 1)
-	if err != nil {
-		t.Fatalf("Resolve(1): %v", err)
-	}
-	if deck.Base != DefaultRoot {
-		t.Fatalf("expected fallback to DefaultRoot, got %+v", deck)
-	}
-}
-
-func TestResolveFallsBackToDefaultWhenIDNotInSongMap(t *testing.T) {
-	root := t.TempDir()
-	parentDir := filepath.Join(root, "songs")
-	defaultDir := filepath.Join(root, "default")
-	writeImages(t, defaultDir, "d.png")
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	deck, err := Resolve(parentDir, defaultDir, map[int]string{}, 0, 999)
+func TestResolveFallsBackToLogoWhenIDNotInSongMap(t *testing.T) {
+	files, err := Resolve("/nonexistent", map[int]string{1: "song-one"}, 0, 0, 999)
 	if err != nil {
 		t.Fatalf("Resolve(999): %v", err)
 	}
-	if deck.Base != DefaultRoot {
-		t.Fatalf("expected fallback to DefaultRoot for an unmapped id, got %+v", deck)
+	if len(files) != 1 || files[0] != "" {
+		t.Fatalf("expected the logo marker for an unmapped id, got %+v", files)
+	}
+}
+
+func TestResolveKnownSongReturnsItsFiles(t *testing.T) {
+	root := t.TempDir()
+	writeImages(t, filepath.Join(root, "song-one"), "1.png", "2.png")
+
+	songMap := map[int]string{1: "song-one"}
+	files, err := Resolve(root, songMap, 0, 0, 1)
+	if err != nil {
+		t.Fatalf("Resolve(1): %v", err)
+	}
+	sort.Strings(files)
+	want := []string{filepath.Join("song-one", "1.png"), filepath.Join("song-one", "2.png")}
+	if len(files) != len(want) || files[0] != want[0] || files[1] != want[1] {
+		t.Fatalf("expected %v, got %v", want, files)
+	}
+}
+
+func TestResolveErrorsWhenSongDirMissing(t *testing.T) {
+	root := t.TempDir()
+	songMap := map[int]string{1: "does-not-exist"}
+	if _, err := Resolve(root, songMap, 0, 0, 1); err == nil {
+		t.Fatal("expected an error when the mapped song directory doesn't exist")
 	}
 }
 
 func TestResolveErrorsWhenDirectoryHasNoImages(t *testing.T) {
 	root := t.TempDir()
-	defaultDir := filepath.Join(root, "default")
-	if err := os.MkdirAll(defaultDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "song-one"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := Resolve(filepath.Join(root, "songs"), defaultDir, nil, 0, DefaultID); err == nil {
+	songMap := map[int]string{1: "song-one"}
+	if _, err := Resolve(root, songMap, 0, 0, 1); err == nil {
 		t.Fatal("expected an error for a directory with no image files")
+	}
+}
+
+func TestResolveInsertsCommercials(t *testing.T) {
+	root := t.TempDir()
+	writeImages(t, filepath.Join(root, "song-one"), "1.png", "2.png", "3.png", "4.png")
+	writeImages(t, filepath.Join(root, "commercials"), "c1.png", "c2.png", "c3.png")
+
+	songMap := map[int]string{1: "song-one"}
+	files, err := Resolve(root, songMap, 0, 2, 1) // commercialFrequency=2 -> up to 4/2=2 commercials
+	if err != nil {
+		t.Fatalf("Resolve(1): %v", err)
+	}
+	if len(files) != 6 {
+		t.Fatalf("expected 4 song files + 2 commercials, got %d: %v", len(files), files)
+	}
+}
+
+func TestResolveSkipsCommercialsWhenDirectoryMissing(t *testing.T) {
+	root := t.TempDir()
+	writeImages(t, filepath.Join(root, "song-one"), "1.png", "2.png")
+
+	songMap := map[int]string{1: "song-one"}
+	files, err := Resolve(root, songMap, 0, 2, 1)
+	if err != nil {
+		t.Fatalf("Resolve(1): %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected no commercials added when none exist, got %v", files)
 	}
 }
 
