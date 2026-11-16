@@ -47,7 +47,6 @@ func Resolve(parentDir string, songMap map[int]string, logoFrequency, commercial
 	files = insertLogo(files, logoFrequency)
 
 	rand.Shuffle(len(files), func(i, j int) { files[i], files[j] = files[j], files[i] })
-	fmt.Println("files", files) // TODO cleanup
 
 	log.Println("playing slides in", songDir)
 	return files, nil

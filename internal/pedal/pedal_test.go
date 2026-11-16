@@ -27,6 +27,11 @@ func (f *fakeController) StartDefault() error {
 	return f.err
 }
 
+func (f *fakeController) SelectRelative(i int) error {
+	f.calls = append(f.calls, "SelectRelative")
+	return f.err
+}
+
 // rawEvent builds one raw 24-byte input_event record: a 16-byte timeval
 // (ignored by readEvents, so left zeroed), type, code, value.
 func rawEvent(typ, code uint16, value int32) []byte {
