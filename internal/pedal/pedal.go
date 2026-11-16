@@ -29,6 +29,7 @@ import (
 type Controller interface {
 	SelectNext() error
 	SelectPrevious() error
+	SelectRelative(delta int) error
 	Start() error
 	StartDefault() error
 }
@@ -52,6 +53,8 @@ const (
 	keyPageUp   = 104
 	keyPageDown = 109
 )
+
+const bulkSelectDelta = 10 // how far SelectRelative moves on Space (pedal's "bulk select" key)
 
 // readEvents reads raw input_event records from r until it returns an
 // error (including io.EOF) and calls the matching Controller method for
@@ -78,7 +81,7 @@ func readEvents(r io.Reader, c Controller) error {
 
 		switch code {
 		case keySpace:
-			logErr("StartDefault", c.StartDefault())
+			logErr("SelectRelative", c.SelectRelative(bulkSelectDelta))
 		case keyEnter:
 			logErr("Start", c.Start())
 		case keyPageUp:

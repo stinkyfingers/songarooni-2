@@ -66,9 +66,7 @@ h1 {
      shrink below its content's natural height; without it, #default-tempo
      appearing would push the page taller instead of #song-list yielding
      the room. #song-list's own overflow-y still catches the case where
-     even the minimum doesn't fit. position: relative anchors
-     #song-list-thumb (see below) to this box. */
-  position: relative;
+     even the minimum doesn't fit. */
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 1.5rem;
@@ -83,43 +81,6 @@ h1 {
   gap: 0.5rem;
   height: 100%;
   overflow-y: auto;
-  /* Hide the native scrollbar everywhere in favor of #song-list-thumb
-     below. Not just an iOS workaround (though iOS Safari — and every iOS
-     browser, all WebKit underneath — ignores ::-webkit-scrollbar-*
-     styling outright, with no CSS-only fix): one hand-drawn indicator
-     that works identically everywhere is simpler than a native-styled one
-     for most browsers plus a separate fallback just for iOS. */
-  scrollbar-width: none; /* Firefox */
-}
-
-#song-list::-webkit-scrollbar {
-  display: none;
-}
-
-/* Draggable (see the pointerdown/move/up handlers in app.js) — padding
-   widens the actual touch/grab target without widening how it looks,
-   since background-clip keeps the visible color confined to the inner
-   content box. Sized and positioned by updateScrollThumb() in app.js, on
-   every scroll and whenever the list's content changes. */
-.scroll-thumb {
-  position: absolute;
-  top: 0;
-  right: 0;
-  /* box-sizing: border-box (global reset above) means padding eats into
-     width rather than adding to it — 32px total minus 10px padding each
-     side leaves exactly the intended 12px visible content-box width. */
-  width: 40px;
-  padding: 0 0px; /* wider grab target than the visible bar */
-  background: #fff;
-  background-clip: content-box;
-  border-radius: 4px;
-  cursor: grab;
-  touch-action: none; /* we drive scrolling ourselves while dragging; don't let the browser also try to pan/zoom */
-  display: none;
-}
-
-.scroll-thumb:active {
-  cursor: grabbing;
 }
 
 #song-list li {

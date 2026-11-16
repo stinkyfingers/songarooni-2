@@ -141,14 +141,14 @@ func (c *Controller) SelectSong(id int) error {
 // song-list UI of its own to pick from directly; always allowed, same as
 // SelectSong.
 func (c *Controller) SelectNext() error {
-	return c.selectRelative(1)
+	return c.SelectRelative(1)
 }
 
 func (c *Controller) SelectPrevious() error {
-	return c.selectRelative(-1)
+	return c.SelectRelative(-1)
 }
 
-func (c *Controller) selectRelative(delta int) error {
+func (c *Controller) SelectRelative(delta int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
