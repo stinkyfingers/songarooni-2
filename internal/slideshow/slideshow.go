@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"songarooni/internal/songs"
+	"songarooni/internal/state"
 )
 
 //go:embed bkgd.jpg
@@ -28,6 +29,7 @@ type Slideshow struct {
 	songMap         map[int]songs.Song
 	logoEvery       int
 	commercialEvery int
+	customIDs       state.CustomIDs
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
 	stateChan       chan string
 
@@ -52,6 +54,10 @@ func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commerci
 		stateChan:       make(chan string),
 		ctx:             context.Background(), // overwritten by Run; keeps Show safe to call even earlier
 	}
+}
+
+func (s *Slideshow) SetCustomIDs(ids state.CustomIDs) {
+	s.customIDs = ids
 }
 
 // Run serves the kiosk page and its assets until ctx is done.

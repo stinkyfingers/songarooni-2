@@ -19,8 +19,8 @@ import (
 // whatever does need a direct push notification instead.
 type Display interface {
 	Show(id int)
+	SetCustomIDs(ids CustomIDs)
 }
-
 
 // State is a snapshot of current playback state, safe to copy and return
 // from an API handler.
@@ -97,6 +97,7 @@ func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controll
 			customIds.CommercialID = s.ID
 		}
 	}
+	display.SetCustomIDs(customIds)
 
 	return &Controller{
 		catalog:   all,

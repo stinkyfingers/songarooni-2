@@ -14,7 +14,7 @@ import (
 // client's own crossfade transition length — without it the next slide
 // would start loading/revealing before the current one finishes fading
 // out.
-const crossfadePadding = 2 * time.Second
+const crossfadePadding = 1 * time.Second
 
 // Show implements state.Display: it resolves id's slide deck and starts
 // cycling it, pushing each slide's URL to every connected SSE client (see
@@ -31,6 +31,16 @@ func (s *Slideshow) Show(id int) {
 		log.Printf("display: error resolving slides for song id %d: %v", id, err)
 		return
 	}
+	commercials, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, s.customIDs.CommercialID)
+	if err != nil {
+		log.Printf("display: error resolving slides for song id %d: %v", id, err)
+		return
+	}
+	logos, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, s.customIDs.LogoID)
+	if err != nil {
+		log.Printf("display: error resolving slides for song id %d: %v", id, err)
+		return
+	}
 
 	s.showMu.Lock()
 	if s.cancelShow != nil {
@@ -40,33 +50,64 @@ func (s *Slideshow) Show(id int) {
 	s.cancelShow = cancel
 	s.showMu.Unlock()
 
-	go s.cycle(ctx, deck)
+	go s.cycle(ctx, deck, commercials, logos)
 }
 
 // cycle pushes deck's slides to stateChan one at a time, holding each on
 // screen for its own dwell duration (see dwell) before moving to the next,
 // until ctx is done.
-func (s *Slideshow) cycle(ctx context.Context, deck []songs.Data) {
+func (s *Slideshow) cycle(ctx context.Context, deck, commercials, logos []songs.Data) {
+	commercialIndex := 0
+	logoIndex := 0
 	i := 0
 	for {
 		data := deck[i]
-		u, err := url.JoinPath("/images", data.Path)
-		if err != nil {
-			log.Printf("display: error joining path for slide %s: %v", data, err)
-			return
+		if !s.displayData(ctx, data) {
+			return // ctx was canceled (or the path was unjoinable) — stop the goroutine, same as the old inline return did
 		}
-
-		select {
-		case s.stateChan <- u:
-		case <-ctx.Done():
-			return
+		if i%s.logoEvery == s.logoEvery-1 && len(logos) > 0 {
+			if !s.displayData(ctx, logos[logoIndex]) {
+				return
+			}
+			if logoIndex++; logoIndex >= len(logos) {
+				logoIndex = 0
+			}
 		}
-
-		select {
-		case <-time.After(data.Length + crossfadePadding):
-		case <-ctx.Done():
-			return
+		if i%s.commercialEvery == s.commercialEvery-1 && len(commercials) > 0 {
+			if !s.displayData(ctx, commercials[commercialIndex]) {
+				return
+			}
+			if commercialIndex++; commercialIndex >= len(commercials) {
+				commercialIndex = 0
+			}
 		}
 		i = (i + 1) % len(deck)
 	}
+}
+
+// displayData pushes data's URL and dwells for its duration, returning
+// false if ctx was canceled partway through (or the path itself was bad) —
+// the caller must stop on false rather than looping again, since looping
+// on an already-canceled ctx would just busy-spin forever instead of
+// actually ending the goroutine.
+func (s *Slideshow) displayData(ctx context.Context, data songs.Data) bool {
+	u, err := url.JoinPath("/images", data.Path)
+	if err != nil {
+		log.Printf("display: error joining path for slide %s: %v", data, err)
+		return false
+	}
+
+	select {
+	case s.stateChan <- u:
+	case <-ctx.Done():
+		return false
+	}
+
+	select {
+	case <-time.After(data.Length + crossfadePadding):
+	case <-ctx.Done():
+		return false
+	}
+
+	return true
 }

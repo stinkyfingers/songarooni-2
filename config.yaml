@@ -6,6 +6,7 @@ songs_file: "songs.json"
 slide_dir: "./generated_band_photos"
 slide_interval_seconds: 3
 logo_frequency: 5
+commercial_frequency: 4
 audio_device: "default"
 log_file: "songarooni.log"
 click_volume: 1.0
