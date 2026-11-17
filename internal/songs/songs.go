@@ -95,6 +95,16 @@ func validateSlideDir(slideDir, slides string, defaultLength time.Duration) ([]D
 		if e.IsDir() {
 			continue
 		}
+		// Skip dotfiles — in particular macOS's AppleDouble sidecar files
+		// (e.g. "._1.jpg" alongside "1.jpg"), written automatically by
+		// Finder for every copied file/folder when the destination isn't
+		// HFS+/APFS (a FAT32/exFAT USB drive, which is how media actually
+		// gets onto the Pi). They keep the original extension but aren't
+		// real image/video data, so letting one through here means the
+		// browser gets a URL that silently fails to load.
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
 		if typ, ok := supportedImageExts[strings.ToLower(filepath.Ext(e.Name()))]; ok {
 			length := defaultLength
 			if typ == "video" {
