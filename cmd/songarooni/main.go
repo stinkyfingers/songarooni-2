@@ -108,11 +108,5 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 		}
 	}()
 
-	return noopDisplay{}
-}
-
-type noopDisplay struct{}
-
-func (noopDisplay) Show(id int) {
-	log.Printf("display: (no-op) would show song id %d", id)
+	return show
 }

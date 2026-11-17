@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"songarooni/internal/slides"
 )
@@ -38,6 +39,11 @@ type Slideshow struct {
 	commercialEvery int
 	intervalMS      int
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
+	stateChan       chan string
+
+	showMu     sync.Mutex
+	ctx        context.Context    // set by Run; Show's cycling goroutines exit when this is done
+	cancelShow context.CancelFunc // cancels whichever deck Show previously started cycling, if any
 }
 
 // New prepares a Slideshow listening on addr. apiPort is the main server's
@@ -54,17 +60,24 @@ func New(addr, parentDir string, songMap map[int]string, logoEvery, commercialEv
 		commercialEvery: commercialEvery,
 		intervalMS:      slideIntervalSeconds * 1000,
 		apiPort:         apiPort,
+		stateChan:       make(chan string),
+		ctx:             context.Background(), // overwritten by Run; keeps Show safe to call even earlier
 	}
 }
 
 // Run serves the kiosk page and its assets until ctx is done.
 func (s *Slideshow) Run(ctx context.Context) error {
+	s.showMu.Lock()
+	s.ctx = ctx
+	s.showMu.Unlock()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /config", s.handleConfig)
 	mux.HandleFunc("GET /logo.png", s.handleLogo)
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
 	mux.HandleFunc("GET /slides", s.handleSlides)
 	mux.HandleFunc("GET /images/", s.handleImages)
+	mux.HandleFunc("GET /events", s.sseHandler)
 	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css
 
 	server := &http.Server{Addr: s.addr, Handler: mux}
@@ -81,6 +94,31 @@ func (s *Slideshow) Run(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+func (s *Slideshow) sseHandler(w http.ResponseWriter, r *http.Request) {
+	// Set required SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Ensure the ResponseWriter supports flushing
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	for {
+		select {
+		case msg := <-s.stateChan:
+			w.Write([]byte("event: data\ndata: " + msg + "\n\n"))
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+
 }
 
 func (s *Slideshow) handleImages(w http.ResponseWriter, r *http.Request) {

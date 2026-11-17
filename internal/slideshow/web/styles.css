@@ -23,3 +23,8 @@ html, body {
 .slide.visible {
   opacity: 1;
 }
+
+.error {
+  color: red;
+  font-size: 20px;
+}
