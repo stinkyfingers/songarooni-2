@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"songarooni/internal/slides"
 	"songarooni/internal/songs"
 )
 
@@ -39,10 +38,36 @@ func (f *fakeDisplay) Show(id int) {
 	f.shown = append(f.shown, id)
 }
 
+// testCatalog is two plain songs, already in the alphabetical order
+// songs.LoadJSON would produce (Honky Tonk Women, The Weight) — no
+// Default/Logo/Commercials entries, for tests that only care about normal
+// song selection/start/stop and don't touch customIDs at all.
 func testCatalog() []songs.Song {
 	return []songs.Song{
 		{ID: 1, Title: "Honky Tonk Women", Slides: "honky-tonk-women", Tempo: 118},
 		{ID: 2, Title: "The Weight", Slides: "the-weight", Tempo: 112},
+	}
+}
+
+// testCatalogWithCustoms adds Default and Logo entries (matching how
+// songs.json now carries them as real catalog rows, via Category) for
+// tests that exercise StartDefault/SetDefaultTempo/ToggleLogo — those
+// derive customIDs.DefaultID/LogoID from Category at New() time, and
+// require the ids to actually resolve through SelectSong.
+func testCatalogWithCustoms() []songs.Song {
+	return append([]songs.Song{
+		{ID: 0, Title: "Default", Category: "default", Tempo: 90},
+		{ID: 1000, Title: "Logo", Category: "logo"},
+	}, testCatalog()...)
+}
+
+func TestNewDerivesCustomIDsFromCategory(t *testing.T) {
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, &fakeDisplay{})
+	if c.customIDs.DefaultID != 0 {
+		t.Fatalf("expected DefaultID 0, got %d", c.customIDs.DefaultID)
+	}
+	if c.customIDs.LogoID != 1000 {
+		t.Fatalf("expected LogoID 1000, got %d", c.customIDs.LogoID)
 	}
 }
 
@@ -170,42 +195,21 @@ func TestMuteStopsAndResumesClickWithoutStoppingPlayback(t *testing.T) {
 	}
 }
 
-func TestDefaultEntryIsAlwaysPresent(t *testing.T) {
-	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
-	var found *songs.Song
-	for _, s := range c.Songs() {
-		if s.ID == slides.DefaultID && s.Title == "Default" {
-			s := s
-			found = &s
-		}
-	}
-	if found == nil {
-		t.Fatal("expected a synthetic Default entry in the catalog")
-	}
-	if !found.HasImages {
-		// Default's deck comes from default_slideshow — whether that
-		// directory actually has images is the display backend's concern,
-		// not this package's; it must not get hidden by a HasImages
-		// filter the way a CSV song with a bad slide dir would.
-		t.Fatal("expected HasImages=true on the synthetic Default entry")
-	}
-}
-
 // Default's id is 0 — the same zero value SelectedSongID/PlayingSongID have
 // before anything is ever selected/playing. HasSelection and Running must
 // disambiguate the two: a client checking "truthy id" instead would see
 // Default as indistinguishable from "nothing selected" and never enable
 // Start.
 func TestSelectingDefaultIsDistinguishableFromNoSelection(t *testing.T) {
-	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, &fakeDisplay{})
 
 	before := c.GetState()
 	if before.HasSelection {
 		t.Fatal("expected HasSelection=false before any SelectSong call")
 	}
 
-	if err := c.SelectSong(slides.DefaultID); err != nil {
-		t.Fatalf("SelectSong(DefaultID): %v", err)
+	if err := c.SelectSong(0); err != nil {
+		t.Fatalf("SelectSong(Default's id, 0): %v", err)
 	}
 	after := c.GetState()
 	if !after.HasSelection {
@@ -224,7 +228,7 @@ func TestSelectingDefaultIsDistinguishableFromNoSelection(t *testing.T) {
 }
 
 // testCatalog's two songs are already alphabetical (Honky Tonk Women, The
-// Weight) — same order songs.LoadFile would now produce.
+// Weight) — same order songs.LoadJSON would now produce.
 func TestSelectNextAndPreviousWrapAndStartFromEnds(t *testing.T) {
 	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
 
@@ -260,29 +264,17 @@ func TestSelectNextAndPreviousWrapAndStartFromEnds(t *testing.T) {
 	}
 }
 
-func TestSelectNextExcludesDefault(t *testing.T) {
-	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
-	_ = c.SelectSong(slides.DefaultID)
-
-	if err := c.SelectNext(); err != nil {
-		t.Fatalf("SelectNext: %v", err)
-	}
-	if got := c.GetState().SelectedSongID; got == slides.DefaultID {
-		t.Fatal("expected SelectNext to skip past Default, never land on it")
-	}
-}
-
 func TestStartDefaultSelectsAndStarts(t *testing.T) {
 	clicker := &fakeClicker{}
 	display := &fakeDisplay{}
-	c := New(testCatalog(), clicker, display)
+	c := New(testCatalogWithCustoms(), clicker, display)
 
 	if err := c.StartDefault(); err != nil {
 		t.Fatalf("StartDefault: %v", err)
 	}
 	got := c.GetState()
-	if !got.Running || got.PlayingSongID != slides.DefaultID || got.SelectedSongID != slides.DefaultID {
-		t.Fatalf("expected Default selected and running, got %+v", got)
+	if !got.Running || got.PlayingSongID != 0 || got.SelectedSongID != 0 {
+		t.Fatalf("expected Default (id 0) selected and running, got %+v", got)
 	}
 	if !clicker.running {
 		t.Fatal("expected the clicker running after StartDefault")
@@ -291,13 +283,13 @@ func TestStartDefaultSelectsAndStarts(t *testing.T) {
 
 func TestSetDefaultTempo(t *testing.T) {
 	clicker := &fakeClicker{}
-	c := New(testCatalog(), clicker, &fakeDisplay{})
+	c := New(testCatalogWithCustoms(), clicker, &fakeDisplay{})
 
 	if err := c.SetDefaultTempo(90); err != nil {
 		t.Fatalf("SetDefaultTempo: %v", err)
 	}
-	if err := c.SelectSong(slides.DefaultID); err != nil {
-		t.Fatalf("SelectSong(DefaultID): %v", err)
+	if err := c.SelectSong(0); err != nil {
+		t.Fatalf("SelectSong(Default's id, 0): %v", err)
 	}
 	if err := c.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -322,7 +314,7 @@ func TestSetDefaultTempo(t *testing.T) {
 
 func TestToggleLogo(t *testing.T) {
 	display := &fakeDisplay{}
-	c := New(testCatalog(), &fakeClicker{}, display)
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, display)
 	_ = c.SelectSong(1)
 	_ = c.Start()
 
@@ -332,8 +324,8 @@ func TestToggleLogo(t *testing.T) {
 	if !c.GetState().LogoActive {
 		t.Fatal("expected LogoActive=true")
 	}
-	if got := display.shown[len(display.shown)-1]; got != slides.LogoID {
-		t.Fatalf("expected display.Show(LogoID), got %d", got)
+	if got := display.shown[len(display.shown)-1]; got != 1000 {
+		t.Fatalf("expected display.Show(1000) (Logo's id), got %d", got)
 	}
 
 	if err := c.ToggleLogo(); err != nil {
@@ -349,13 +341,13 @@ func TestToggleLogo(t *testing.T) {
 
 func TestToggleLogoResumesDefaultWhenNothingPlaying(t *testing.T) {
 	display := &fakeDisplay{}
-	c := New(testCatalog(), &fakeClicker{}, display)
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, display)
 
 	_ = c.ToggleLogo()
 	_ = c.ToggleLogo()
 
-	if got := display.shown[len(display.shown)-1]; got != slides.DefaultID {
-		t.Fatalf("expected display.Show(DefaultID) when nothing was playing, got %d", got)
+	if got := display.shown[len(display.shown)-1]; got != 0 {
+		t.Fatalf("expected display.Show(0) (Default's id) when nothing was playing, got %d", got)
 	}
 }
 
@@ -364,7 +356,7 @@ func TestToggleLogoResumesDefaultWhenNothingPlaying(t *testing.T) {
 // or the phone UI would keep showing the logo button lit while the screen
 // has actually moved on to the new song.
 func TestStartClearsLogoActive(t *testing.T) {
-	c := New(testCatalog(), &fakeClicker{}, &fakeDisplay{})
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, &fakeDisplay{})
 	_ = c.SelectSong(1)
 	_ = c.Start()
 	_ = c.ToggleLogo()

@@ -137,8 +137,7 @@ func (c *Controller) SelectSong(id int) error {
 }
 
 // SelectNext and SelectPrevious move the selection by one through the
-// catalog's native order (alphabetical, per songs.LoadFile; Default
-// excluded, same as the phone's song list) — wrapping at either end. If
+// catalog's native order, wrapping at either end. If
 // nothing is selected yet, SelectNext starts at the first real song and
 // SelectPrevious at the last. Built for the foot pedal, which has no
 // song-list UI of its own to pick from directly; always allowed, same as
@@ -294,6 +293,16 @@ func (c *Controller) SetDefaultTempo(bpm int) error {
 
 	if bpm <= 0 {
 		return fmt.Errorf("tempo must be positive")
+	}
+
+	def, ok := c.byID[c.customIDs.DefaultID]
+	if !ok {
+		return fmt.Errorf("no Default entry in the catalog")
+	}
+	def.Tempo = bpm // takes effect on the next Start even if Default isn't playing right now
+
+	if c.muted || c.playing == nil || c.playing.ID != def.ID {
+		return nil
 	}
 
 	if err := c.clicker.Stop(); err != nil {

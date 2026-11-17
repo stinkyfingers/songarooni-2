@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 )
@@ -19,6 +20,10 @@ func (f *fakeController) SelectNext() error {
 }
 func (f *fakeController) SelectPrevious() error {
 	f.calls = append(f.calls, "SelectPrevious")
+	return f.err
+}
+func (f *fakeController) SelectRelative(delta int) error {
+	f.calls = append(f.calls, fmt.Sprintf("SelectRelative(%d)", delta))
 	return f.err
 }
 func (f *fakeController) Start() error { f.calls = append(f.calls, "Start"); return f.err }
@@ -55,7 +60,7 @@ func TestReadEventsDispatchesEachKeyOnPressOnly(t *testing.T) {
 		t.Fatalf("readEvents: %v", err)
 	}
 
-	want := []string{"StartDefault", "Start", "SelectPrevious", "SelectNext"}
+	want := []string{"SelectRelative(10)", "Start", "SelectPrevious", "SelectNext"}
 	if len(c.calls) != len(want) {
 		t.Fatalf("expected calls %v, got %v", want, c.calls)
 	}
@@ -75,8 +80,8 @@ func TestReadEventsIgnoresNonKeyAndUnrelatedCodes(t *testing.T) {
 	c := &fakeController{}
 	_ = readEvents(&buf, c)
 
-	if len(c.calls) != 1 || c.calls[0] != "StartDefault" {
-		t.Fatalf("expected only StartDefault, got %v", c.calls)
+	if len(c.calls) != 1 || c.calls[0] != "SelectRelative(10)" {
+		t.Fatalf("expected only SelectRelative(10), got %v", c.calls)
 	}
 }
 
