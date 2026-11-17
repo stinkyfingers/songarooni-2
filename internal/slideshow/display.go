@@ -48,12 +48,13 @@ func (s *Slideshow) Show(id int) {
 // cycle pushes deck's slides to stateChan one at a time, holding each on
 // screen for its own dwell duration (see dwell) before moving to the next,
 // until ctx is done.
-func (s *Slideshow) cycle(ctx context.Context, deck []string) {
+func (s *Slideshow) cycle(ctx context.Context, deck []songs.Data) {
 	i := 0
 	for {
-		u, err := url.JoinPath("/images", deck[i])
+		data := deck[i]
+		u, err := url.JoinPath("/images", data.Path)
 		if err != nil {
-			log.Printf("display: error joining path for slide %s: %v", deck[i], err)
+			log.Printf("display: error joining path for slide %s: %v", data, err)
 			return
 		}
 
@@ -64,7 +65,7 @@ func (s *Slideshow) cycle(ctx context.Context, deck []string) {
 		}
 
 		select {
-		case <-time.After(s.dwell(deck[i])):
+		case <-time.After(data.Length + crossfadePadding):
 		case <-ctx.Done():
 			return
 		}

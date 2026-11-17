@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Song struct {
@@ -19,10 +20,16 @@ type Song struct {
 	Genre     string `json:"genre,omitempty"`
 	Year      string `json:"year,omitempty"`
 	HasImages bool   `json:"has_images"`
+	Data      []Data `json:"data,omitempty"`
 }
 
-var supportedImageExts = map[string]bool{
-	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
+type Data struct {
+	Path   string        `json:"path"`
+	Length time.Duration `json:"length"`
+}
+
+var supportedImageExts = map[string]string{
+	".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".mp4": "video",
 }
 
 func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error) {
@@ -41,7 +48,7 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 	var filteredSongs []Song
 
 	for i, song := range songs {
-		if err := validateSlideDir(slideDir, song.Slides); err != nil {
+		if dataList, err := validateSlideDir(slideDir, song.Slides); err != nil {
 			// A broken slide directory is a slides-only problem: warn and
 			// keep the song, rather than refuse to start the whole app
 			// (click included) over it. slideshow.go already falls back to
@@ -55,6 +62,7 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 			}
 		} else {
 			songs[i].HasImages = true
+			songs[i].Data = dataList
 			filteredSongs = append(filteredSongs, songs[i])
 		}
 	}
@@ -67,27 +75,39 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 
 // validateSlideDir confirms slideDir/slides exists and holds at least one
 // supported image file.
-func validateSlideDir(slideDir, slides string) error {
+func validateSlideDir(slideDir, slides string) ([]Data, error) {
 	dir := filepath.Join(slideDir, slides)
 	info, err := os.Stat(dir)
 	if err != nil {
-		return fmt.Errorf("slide directory not found: %s", dir)
+		return nil, fmt.Errorf("slide directory not found: %s", dir)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("not a directory: %s", dir)
+		return nil, fmt.Errorf("not a directory: %s", dir)
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("reading slide directory %s: %w", dir, err)
+		return nil, fmt.Errorf("reading slide directory %s: %w", dir, err)
 	}
+	var dataList []Data
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		if supportedImageExts[strings.ToLower(filepath.Ext(e.Name()))] {
-			return nil
+		if typ, ok := supportedImageExts[strings.ToLower(filepath.Ext(e.Name()))]; ok {
+			var length time.Duration
+			if typ == "video" {
+				// Placeholder for actual video length calculation
+				length, err = MP4Duration(filepath.Join(dir, e.Name()))
+			}
+			dataList = append(dataList, Data{
+				Path:   filepath.Join(dir, e.Name()),
+				Length: length, // Placeholder, actual length calculation can be added later
+			})
 		}
 	}
-	return fmt.Errorf("no supported image files (.png, .jpg, .jpeg, .gif) in %s", dir)
+	if len(dataList) == 0 {
+		return dataList, fmt.Errorf("no supported image files (.png, .jpg, .jpeg, .gif) in %s", dir)
+	}
+	return dataList, nil
 }

@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"songarooni/internal/songs"
 	"strings"
 )
 
@@ -28,36 +29,38 @@ var supportedImageExts = map[string]bool{
 }
 
 // Resolve picks id's slide deck.
-func Resolve(parentDir string, songMap map[int]string, logoFrequency, commercialFrequency, id int) ([]string, error) {
+func Resolve(parentDir string, songMap map[int]songs.Song, logoFrequency, commercialFrequency, id int) ([]songs.Data, error) {
 	if id == LogoID {
-		return []string{""}, nil
+		return []songs.Data{{Path: ""}}, nil
 	}
 
 	songDir, ok := songMap[id]
 	if !ok {
 		log.Println("slides: song id", id, "not found in songMap; falling back to default")
-		return []string{""}, nil
+		return []songs.Data{{Path: ""}}, nil
 	}
-	files, err := imageFiles(parentDir, songDir)
-	if err != nil {
-		return nil, err
-	}
+	// files, err := imageFiles(parentDir, songDir)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	files = insertCommercials(parentDir, files, commercialFrequency)
-	files = insertLogo(files, logoFrequency)
+	// // TODO
+	// files = insertCommercials(parentDir, files, commercialFrequency)
+	// files = insertLogo(files, logoFrequency)
 
-	rand.Shuffle(len(files), func(i, j int) { files[i], files[j] = files[j], files[i] })
-	fmt.Println("files", files) // TODO cleanup
+	// rand.Shuffle(len(files), func(i, j int) { files[i], files[j] = files[j], files[i] })
+	// fmt.Println("files", files) // TODO cleanup
 
-	log.Println("playing slides in", songDir)
-	return files, nil
+	// log.Println("playing slides in", songDir)
+	// return files, nil
+	return songDir.Data, nil
 }
 
 // imageFiles lists dir's supported image files (recursively, like the
 // previous feh-only implementation), as paths relative to dir, in the
 // filesystem's natural walk order (alphabetical per directory level).
 // Hidden files (dotfiles) are skipped.
-func imageFiles(parentDir, songDir string) ([]string, error) {
+func imageFiles(parentDir string, songDir string) ([]string, error) {
 	dir := filepath.Join(parentDir, songDir)
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {

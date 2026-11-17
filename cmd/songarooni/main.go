@@ -83,9 +83,9 @@ func main() {
 // itself (see plans/browser-slideshow-plan.md) rather than the Go side
 // pushing to it.
 func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) state.Display {
-	songMap := make(map[int]string, len(catalog))
+	songMap := make(map[int]songs.Song, len(catalog))
 	for _, s := range catalog {
-		songMap[s.ID] = s.Slides
+		songMap[s.ID] = s
 	}
 
 	// cfg.Addr is always a bare ":PORT" in this app (see config.yaml's own

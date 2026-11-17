@@ -14,11 +14,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
-	"strconv"
 	"sync"
 
-	"songarooni/internal/slides"
+	"songarooni/internal/songs"
 )
 
 //go:embed logo.png
@@ -34,7 +32,7 @@ var embeddedBkgd []byte
 type Slideshow struct {
 	addr            string
 	parentDir       string // config's SlideDir
-	songMap         map[int]string
+	songMap         map[int]songs.Song
 	logoEvery       int
 	commercialEvery int
 	intervalMS      int
@@ -51,7 +49,7 @@ type Slideshow struct {
 // reaches the main server at the same hostname it reaches this one at,
 // just a different port, so only the port number needs to travel to the
 // page, not a full URL.
-func New(addr, parentDir string, songMap map[int]string, logoEvery, commercialEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
+func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commercialEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
 	return &Slideshow{
 		addr:            addr,
 		parentDir:       parentDir,
@@ -73,9 +71,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /config", s.handleConfig)
-	mux.HandleFunc("GET /logo.png", s.handleLogo)
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
-	mux.HandleFunc("GET /slides", s.handleSlides)
 	mux.HandleFunc("GET /images/", s.handleImages)
 	mux.HandleFunc("GET /events", s.sseHandler)
 	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css
@@ -122,7 +118,7 @@ func (s *Slideshow) sseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Slideshow) handleImages(w http.ResponseWriter, r *http.Request) {
-	http.StripPrefix("/images/", http.FileServer(http.Dir(s.parentDir))).ServeHTTP(w, r)
+	http.StripPrefix("/images/", http.FileServer(http.Dir("."))).ServeHTTP(w, r)
 }
 
 // handleConfig tells the static page the two values it can't know on its
@@ -138,51 +134,7 @@ func (s *Slideshow) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}{s.apiPort, s.intervalMS})
 }
 
-func (s *Slideshow) handleLogo(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "image/png")
-	_, _ = w.Write(embeddedLogo)
-}
-
 func (s *Slideshow) handleBkgd(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	_, _ = w.Write(embeddedBkgd)
-}
-
-// handleSlides resolves ?id=<song id> to its ordered slide URLs (JSON
-// array of strings), using internal/slides for the actual
-// DefaultID/LogoID/missing-directory/shuffle/logo-insertion resolution.
-func (s *Slideshow) handleSlides(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.URL.Query().Get("id"))
-	if err != nil {
-		http.Error(w, "invalid or missing id", http.StatusBadRequest)
-		return
-	}
-
-	filenames, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, id)
-	if err != nil {
-		// just show logo
-		filenames = []string{""}
-	}
-
-	urls := make([]string, len(filenames))
-	for i, f := range filenames {
-		urls[i] = slideURL(f)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store") // a song's own deck is shuffled fresh per Resolve call; never cache
-	if err := json.NewEncoder(w).Encode(urls); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// slideURL maps one of deck's Files entries to the URL that'll actually
-// serve it: "/logo.png" for a logo marker, otherwise under whichever of
-// /images/song/ or /images/default/ matches deck.Base — url.URL handles
-// percent-encoding any special characters in filenames.
-func slideURL(file string) string {
-	if file == "" {
-		return "/logo.png"
-	}
-	return filepath.Join("/images", file)
 }
