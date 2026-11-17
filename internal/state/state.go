@@ -5,10 +5,13 @@
 package state
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	"songarooni/internal/click"
+	"songarooni/internal/pedal"
 	"songarooni/internal/slides"
 	"songarooni/internal/songs"
 )
@@ -68,8 +71,8 @@ type Controller struct {
 	logoActive bool
 	lastErr    string
 
-	clicker click.Clicker
-	display Display
+	clicker   click.Clicker
+	pedalChan chan pedal.PedalControls
 }
 
 // New builds a Controller over catalog, driving clicker and display. A
@@ -77,13 +80,13 @@ type Controller struct {
 // clicking at a manually-set tempo on songs that aren't in the catalog —
 // songs.LoadFile never produces id 0 itself, so this
 // can't collide with a real song.
-func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controller {
+func New(catalog []songs.Song, clicker click.Clicker, pedalChan chan pedal.PedalControls) *Controller {
 	defaultSong := &songs.Song{
-		ID:        slides.DefaultID,
-		Title:     "Default",
-		Slides:    "default",
-		Tempo:     defaultTempo,
-		HasImages: true, // validated separately via default_slideshow at slideshow.New() time, not here
+		ID:      slides.DefaultID,
+		Title:   "Default",
+		Slides:  "default",
+		Tempo:   defaultTempo,
+		HasData: true, // validated separately via default_slideshow at slideshow.New() time, not here
 	}
 
 	all := make([]*songs.Song, 0, len(catalog)+1)
@@ -100,7 +103,44 @@ func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controll
 		byID:        byID,
 		defaultSong: defaultSong,
 		clicker:     clicker,
-		display:     display,
+		pedalChan:   pedalChan,
+	}
+}
+
+func (c *Controller) Watch(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case pedalControl := <-c.pedalChan:
+			log.Printf("received pedal control: %s", pedalControl)
+			switch pedalControl {
+			case pedal.Next:
+				if err := c.SelectNext(); err != nil {
+					log.Printf("pedal: SelectNext failed: %v", err)
+				}
+			case pedal.Previous:
+				if err := c.SelectPrevious(); err != nil {
+					log.Printf("pedal: SelectPrevious failed: %v", err)
+				}
+			case pedal.Start:
+				c.mu.Lock()
+				if c.playing == nil {
+					if err := c.Start(); err != nil {
+						log.Printf("pedal: Start failed: %v", err)
+					}
+				} else {
+					if err := c.Stop(); err != nil {
+						log.Printf("pedal: Stop failed: %v", err)
+					}
+				}
+				c.mu.Unlock()
+			case pedal.NextTen:
+				if err := c.SelectRelative(10); err != nil {
+					log.Printf("pedal: SelectRelative(10) failed: %v", err)
+				}
+			}
+		}
 	}
 }
 
@@ -215,19 +255,18 @@ func (c *Controller) Start() error {
 		return fmt.Errorf("already running")
 	}
 
-	if c.playing != nil && !c.muted {
+	if c.playing != nil && !c.muted && c.clicker != nil {
 		if err := c.clicker.Stop(); err != nil {
 			c.lastErr = err.Error()
 			return err
 		}
 	}
-	if !c.muted {
+	if !c.muted && c.clicker != nil {
 		if err := c.clicker.Start(c.selected.Tempo); err != nil {
 			c.lastErr = err.Error()
 			return err
 		}
 	}
-	c.display.Show(c.selected.ID)
 	c.playing = c.selected
 	c.logoActive = false // starting a song already moves the display off the logo; keep the flag truthful
 	c.lastErr = ""
@@ -320,15 +359,10 @@ func (c *Controller) ToggleLogo() error {
 
 	if c.logoActive {
 		c.logoActive = false
-		if c.playing != nil {
-			c.display.Show(c.playing.ID)
-		} else {
-			c.display.Show(slides.DefaultID)
-		}
 		return nil
 	}
 	c.logoActive = true
-	c.display.Show(slides.LogoID)
+
 	return nil
 }
 

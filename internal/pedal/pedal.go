@@ -34,6 +34,13 @@ type Controller interface {
 	StartDefault() error
 }
 
+type PedalControls string
+
+var Start PedalControls = "start"
+var Next PedalControls = "next"
+var Previous PedalControls = "previous"
+var NextTen PedalControls = "next_ten"
+
 // Linux evdev's input_event layout on 64-bit kernels (the only target this
 // app cross-compiles for — see Makefile's build-pi): a 16-byte timeval
 // followed by type (uint16), code (uint16), and value (int32); 24 bytes
@@ -62,7 +69,7 @@ const bulkSelectDelta = 10 // how far SelectRelative moves on Space (pedal's "bu
 // Errors from the Controller itself are logged, not returned — a rejected
 // call (e.g. Start() with nothing selected) shouldn't stop the pedal from
 // working on the next keypress.
-func readEvents(r io.Reader, c Controller) error {
+func readEvents(r io.Reader, send chan PedalControls) error {
 	buf := make([]byte, eventSize)
 	for {
 		if _, err := io.ReadFull(r, buf); err != nil {
@@ -81,13 +88,19 @@ func readEvents(r io.Reader, c Controller) error {
 
 		switch code {
 		case keySpace:
-			logErr("SelectRelative", c.SelectRelative(bulkSelectDelta))
+			// logErr("SelectRelative", c.SelectRelative(bulkSelectDelta))
+			send <- (NextTen)
 		case keyEnter:
-			logErr("Start", c.Start())
+			// logErr("Start", c.Start())
+			send <- (Start)
 		case keyPageUp:
-			logErr("SelectPrevious", c.SelectPrevious())
+			// logErr("SelectPrevious", c.SelectPrevious())
+			send <- (Previous)
 		case keyPageDown:
-			logErr("SelectNext", c.SelectNext())
+			// logErr("SelectNext", c.SelectNext())
+			send <- (Next)
+		default:
+			log.Printf("pedal: unrecognized key code %d", code)
 		}
 	}
 }

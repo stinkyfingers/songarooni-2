@@ -26,6 +26,68 @@ Then on the Pi itself:
 
 See `plans/cross-compile-plan.md` for the full build/provisioning walkthrough, including installing `alsa-utils` on the Pi (and a Chromium-family browser for the venue display — see "Venue display" below).
 
+## Setting up a new Pi (full checklist)
+
+Everything needed to go from a blank SD card to a working show Pi, in order. Steps that already have their own detailed section below are linked rather than repeated — treat this as the table of contents for a from-scratch setup, not a replacement for them.
+
+1. **Flash the SD card with Raspberry Pi Imager**, using its Advanced Options (gear icon, or Ctrl+Shift+X) to preconfigure everything before first boot:
+   - **Hostname**: `songarooni` (so it comes up as `songarooni.local` immediately — see "Setting the Pi's hostname" below if you ever need to change it after the fact).
+   - **Username**: `admin` — matches the Makefile's default `HOST ?= admin@songarooni.local` and every command below; using a different username means overriding `HOST` everywhere instead.
+   - **Enable SSH**, authorizing your Mac's public key (`~/.ssh/id_ed25519.pub` or similar) directly in the imager if it offers that option — this skips needing password auth at all on first boot.
+
+2. **Confirm SSH access, then add the `ssh songarooni` shortcut** on your Mac so you don't have to type `admin@songarooni.local` everywhere:
+   ```bash
+   ssh admin@songarooni.local   # confirm this works first (password prompt is fine if you didn't preload a key above)
+   ```
+   Add to `~/.ssh/config` on your Mac:
+   ```
+   Host songarooni
+       User admin
+       Hostname songarooni.local
+   ```
+   If step 1 didn't preload your key (so you're still typing a password), copy it over once so this, `make deploy`'s `rsync`, and everything else stop prompting:
+   ```bash
+   ssh-copy-id songarooni
+   ```
+   From here on, `ssh songarooni` and `make deploy HOST=songarooni` (or just `make deploy`, since `admin@songarooni.local` is already the default) both just work.
+
+3. **Install base packages** the app needs that aren't on every Raspberry Pi OS image by default:
+   ```bash
+   sudo apt install alsa-utils chromium
+   ```
+   (`chromium-browser` on older Raspberry Pi OS versions — `make deploy` / `start.sh` will tell you if the name's wrong for this image; see "Venue display" below.)
+
+4. **Set up the network** the phone and Pi will share at a show — see "Network setup" below for both options (dedicated router vs. the Pi as its own access point).
+
+5. **Connect the foot pedal (USB)**. Plug it in, then confirm it enumerates and find its exact device name:
+   ```bash
+   cat /proc/bus/input/devices
+   ```
+   Look for the `N: Name=` line that isn't your mouse/keyboard — set `pedal_device_name` in `config.prod.yaml` (step 6) to match it (a substring is fine; the match is case-insensitive `contains`, not exact).
+
+   Then put the Pi user in the `input` group, so `songarooni` can read `/dev/input/eventN` directly without running as root:
+   ```bash
+   sudo usermod -aG input "$(whoami)"
+   ```
+   Log out and back in (or reboot) for the group change to take effect.
+
+6. **Write this Pi's `config.prod.yaml`** on your Mac (gitignored — never commit it) with its real hardware settings before the first deploy: `slide_dir` (wherever the slide images will live on this Pi — see step 8), `audio_device` (`aplay -l` on the Pi to find the right card/device string), `pedal_device_name` (from step 5), and `addr` if you're not using the default port. See `internal/config/config.go`'s `Config` struct for every available key and its default.
+
+7. **Deploy and run**:
+   ```bash
+   make deploy HOST=songarooni
+   ```
+   Then on the Pi:
+   ```bash
+   ./start.sh
+   ```
+
+8. **Copy the slide images onto the Pi.** These are never part of `make deploy` — copy them by hand over USB (or now that SSH works, `rsync -av ./generated_band_photos/ songarooni:~/songarooni/media/` works just as well) to wherever `config.prod.yaml`'s `slide_dir` points.
+
+9. **Work through the remaining one-time setup below**, each only needed once per new Pi, order doesn't matter: "One-time Pi setup: easy single-click start" and "One-time Pi setup: GPU memory for smooth video".
+
+10. **Smoke-test the whole thing** before trusting it at a show: phone reaches the control panel, a song's slides display and crossfade, the click plays at the right tempo and volume, the pedal's Start/Next/Previous/Default all work, and the kiosk browser comes up fullscreen on its own.
+
 ## Setting the Pi's hostname (`songarooni.local`)
 
 This is what actually makes `songarooni.local` resolve on the network — relevant any time you set up a new Pi, or need to repeat/change it.

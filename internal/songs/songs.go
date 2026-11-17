@@ -11,18 +11,27 @@ import (
 )
 
 type Song struct {
-	ID        int    `json:"id"`
-	Title     string `json:"title"`
-	Slides    string `json:"slides"`
-	Tempo     int    `json:"tempo"`
-	Artist    string `json:"artist,omitempty"`
-	Genre     string `json:"genre,omitempty"`
-	Year      string `json:"year,omitempty"`
-	HasImages bool   `json:"has_images"`
+	ID     int    `json:"id"`
+	Title  string `json:"title"`
+	Slides string `json:"slides"`
+	Tempo  int    `json:"tempo"`
+	Artist string `json:"artist,omitempty"`
+	Genre  string `json:"genre,omitempty"`
+	Year   string `json:"year,omitempty"`
+
+	HasData bool   `json:"has_data"` // true if the song's slides dir exists and has at least one supported image file
+	Data    []Data `json:"data,omitempty"`
 }
 
-var supportedImageExts = map[string]bool{
-	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
+type Data struct {
+	SongID   int     `json:"song_id"`
+	Type     string  `json:"type"` // "image" or "video"
+	Filename string  `json:"filename"`
+	Duration float64 `json:"duration,omitempty"` // seconds, for videos
+}
+
+var supportedImageExts = map[string]string{
+	".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".mp4": "video",
 }
 
 func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error) {
@@ -41,20 +50,16 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 	var filteredSongs []Song
 
 	for i, song := range songs {
-		if err := validateSlideDir(slideDir, song.Slides); err != nil {
-			// A broken slide directory is a slides-only problem: warn and
-			// keep the song, rather than refuse to start the whole app
-			// (click included) over it. slideshow.go already falls back to
-			// the "default" deck at runtime when a song's directory isn't
-			// there.
-			log.Printf("slide validation: %s: %s", song.Title, err)
+		if data, err := validateSlideDir(slideDir, song.Slides); err != nil {
+			log.Printf("song data validation: %s: %s", song.Title, err)
 
 			if includeEmptySongs {
-				songs[i].HasImages = false
+				songs[i].HasData = false
 				filteredSongs = append(filteredSongs, songs[i])
 			}
 		} else {
-			songs[i].HasImages = true
+			songs[i].HasData = true
+			songs[i].Data = data
 			filteredSongs = append(filteredSongs, songs[i])
 		}
 	}
@@ -66,28 +71,43 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 }
 
 // validateSlideDir confirms slideDir/slides exists and holds at least one
-// supported image file.
-func validateSlideDir(slideDir, slides string) error {
+// supported data file.
+func validateSlideDir(slideDir, slides string) ([]Data, error) {
 	dir := filepath.Join(slideDir, slides)
 	info, err := os.Stat(dir)
 	if err != nil {
-		return fmt.Errorf("slide directory not found: %s", dir)
+		return nil, fmt.Errorf("slide directory not found: %s", dir)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("not a directory: %s", dir)
+		return nil, fmt.Errorf("not a directory: %s", dir)
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("reading slide directory %s: %w", dir, err)
+		return nil, fmt.Errorf("reading slide directory %s: %w", dir, err)
 	}
+	var data []Data
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		if supportedImageExts[strings.ToLower(filepath.Ext(e.Name()))] {
-			return nil
+		if typ, ok := supportedImageExts[strings.ToLower(filepath.Ext(e.Name()))]; ok {
+			data = append(data, Data{
+				Type:     typ,
+				Filename: e.Name(),
+			})
+			if typ == "video" {
+				dur, err := MP4Duration(filepath.Join(dir, e.Name()))
+				if err != nil {
+					log.Printf("reading %s duration: %v; skipping duration", e.Name(), err)
+				} else {
+					data[len(data)-1].Duration = dur.Seconds()
+				}
+			}
 		}
 	}
-	return fmt.Errorf("no supported image files (.png, .jpg, .jpeg, .gif) in %s", dir)
+	if len(data) == 0 {
+		return nil, fmt.Errorf("no supported data files in %s", dir)
+	}
+	return data, nil
 }

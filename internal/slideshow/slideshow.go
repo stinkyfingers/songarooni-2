@@ -13,6 +13,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -87,6 +88,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		_ = server.Shutdown(context.Background())
+		fmt.Printf("slideshow: Run exiting due to context done: %v\n", ctx.Err())
 		return ctx.Err()
 	case err := <-errCh:
 		if err != nil && err != http.ErrServerClosed {

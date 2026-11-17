@@ -28,7 +28,7 @@ const retryInterval = 3 * time.Second
 // for each recognized keypress. If the device isn't found, or reading from
 // it ever fails, it keeps retrying every retryInterval — this is what makes
 // it survive a Bluetooth reconnect mid-show, unlike triggerhappy.
-func Watch(ctx context.Context, nameSubstr string, c Controller) {
+func Watch(ctx context.Context, nameSubstr string, send chan PedalControls) {
 	for {
 		if ctx.Err() != nil {
 			return
@@ -53,7 +53,7 @@ func Watch(ctx context.Context, nameSubstr string, c Controller) {
 			}
 		}()
 
-		err = readEvents(f, c)
+		err = readEvents(f, send)
 		close(done)
 		f.Close()
 
