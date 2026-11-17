@@ -17,12 +17,12 @@ import (
 // DefaultID is the sentinel song id that selects the "default" subdirectory
 // instead of a specific song's slides. Real song ids from songs file start at
 // 1, so 0 is never a valid song id.
-const DefaultID = 0
+// const DefaultID = 0
 
 // LogoID is the sentinel id that shows just the logo, full-screen, instead
 // of any song's slide deck. Negative, so it can never collide with a real
 // song id (which must be positive) or DefaultID.
-const LogoID = -1
+// const LogoID = -1
 
 var supportedImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,
@@ -30,10 +30,6 @@ var supportedImageExts = map[string]bool{
 
 // Resolve picks id's slide deck.
 func Resolve(parentDir string, songMap map[int]songs.Song, logoFrequency, commercialFrequency, id int) ([]songs.Data, error) {
-	if id == LogoID {
-		return []songs.Data{{Path: ""}}, nil
-	}
-
 	songDir, ok := songMap[id]
 	if !ok {
 		log.Println("slides: song id", id, "not found in songMap; falling back to default")

@@ -14,6 +14,7 @@ import (
 type Song struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
+	Category  string `json:"category,omitempty"`
 	Slides    string `json:"slides"`
 	Tempo     int    `json:"tempo"`
 	Artist    string `json:"artist,omitempty"`

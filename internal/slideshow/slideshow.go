@@ -19,9 +19,6 @@ import (
 	"songarooni/internal/songs"
 )
 
-//go:embed logo.png
-var embeddedLogo []byte
-
 //go:embed bkgd.jpg
 var embeddedBkgd []byte
 
