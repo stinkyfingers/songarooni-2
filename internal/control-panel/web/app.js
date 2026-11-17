@@ -68,7 +68,6 @@ function sortedSongs() {
   const query = el.search.value.trim().toLowerCase();
   let list = songs
     .filter((s) => !query || s.title.toLowerCase().includes(query))
-    .filter((s) => s.id !== DEFAULT_SONG_ID) // hide Default from song list
     .sort((a, b) => a.title.localeCompare(b.title)); // always sort by ID first, so that the catalog order is stable
 
   switch (sortBy) {

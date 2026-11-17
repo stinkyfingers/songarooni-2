@@ -21,9 +21,6 @@ type Display interface {
 	Show(id int)
 }
 
-// defaultTempo is the Default entry's starting tempo, before anyone sets
-// one via SetDefaultTempo.
-const defaultTempo = 120
 
 // State is a snapshot of current playback state, safe to copy and return
 // from an API handler.

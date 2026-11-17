@@ -106,14 +106,6 @@ func apiHandler(controller *state.Controller, configuration config.Config) http.
 		writeJSON(w, http.StatusOK, controller.GetState())
 	})
 
-	mux.HandleFunc("POST /api/select/default", func(w http.ResponseWriter, r *http.Request) {
-		if err := controller.StartDefault(); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, controller.GetState())
-	})
-
 	mux.HandleFunc("POST /api/start", func(w http.ResponseWriter, r *http.Request) {
 		if err := controller.Start(); err != nil {
 			writeError(w, http.StatusBadRequest, err)

@@ -4,7 +4,7 @@
 addr: ":8080"
 songs_file: "songs.json"
 slide_dir: "./generated_band_photos"
-slide_interval_seconds: 2
+slide_interval_seconds: 3
 logo_frequency: 5
 audio_device: "default"
 log_file: "songarooni.log"

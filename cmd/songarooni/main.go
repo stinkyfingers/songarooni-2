@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	control_panel "songarooni/internal/control-panel"
 
@@ -43,7 +44,7 @@ func main() {
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir, cfg.IncludeEmptySongs)
+	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir, cfg.IncludeEmptySongs, time.Duration(cfg.SlideIntervalSeconds)*time.Second)
 	if err != nil {
 		log.Fatalf("songs.json invalid, refusing to start:\n%v", err)
 	}
@@ -78,10 +79,7 @@ func main() {
 }
 
 // buildDisplay starts the slideshow kiosk server and launches a kiosk
-// browser pointed at it. The Controller's Display stays a no-op: the kiosk
-// page figures out what to show by polling the control panel's /api/state
-// itself (see plans/browser-slideshow-plan.md) rather than the Go side
-// pushing to it.
+// browser pointed at it.
 func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) state.Display {
 	songMap := make(map[int]songs.Song, len(catalog))
 	for _, s := range catalog {
@@ -93,7 +91,7 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	// just whatever follows that one leading colon.
 	apiPort := strings.TrimPrefix(cfg.Addr, ":")
 
-	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, cfg.SlideIntervalSeconds, apiPort)
+	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, apiPort)
 	go func() {
 		if err := show.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("slideshow: Run exited: %v", err)

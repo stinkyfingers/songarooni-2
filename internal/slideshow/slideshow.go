@@ -12,7 +12,6 @@ package slideshow
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"net/http"
 	"sync"
 
@@ -22,17 +21,13 @@ import (
 //go:embed bkgd.jpg
 var embeddedBkgd []byte
 
-// Slideshow serves the kiosk page over HTTP. It holds no "currently
-// showing" state of its own — the page it serves polls the main server for
-// that itself (see poll() in web/app.js) — so unlike a push-driven display,
-// the Controller it runs alongside just uses a no-op Display.
+// Slideshow serves the kiosk page over HTTP.
 type Slideshow struct {
 	addr            string
 	parentDir       string // config's SlideDir
 	songMap         map[int]songs.Song
 	logoEvery       int
 	commercialEvery int
-	intervalMS      int
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
 	stateChan       chan string
 
@@ -46,14 +41,13 @@ type Slideshow struct {
 // reaches the main server at the same hostname it reaches this one at,
 // just a different port, so only the port number needs to travel to the
 // page, not a full URL.
-func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commercialEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
+func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commercialEvery int, apiPort string) *Slideshow {
 	return &Slideshow{
 		addr:            addr,
 		parentDir:       parentDir,
 		songMap:         songMap,
 		logoEvery:       logoEvery,
 		commercialEvery: commercialEvery,
-		intervalMS:      slideIntervalSeconds * 1000,
 		apiPort:         apiPort,
 		stateChan:       make(chan string),
 		ctx:             context.Background(), // overwritten by Run; keeps Show safe to call even earlier
@@ -67,7 +61,6 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	s.showMu.Unlock()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /config", s.handleConfig)
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
 	mux.HandleFunc("GET /images/", s.handleImages)
 	mux.HandleFunc("GET /events", s.sseHandler)
@@ -115,20 +108,7 @@ func (s *Slideshow) sseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Slideshow) handleImages(w http.ResponseWriter, r *http.Request) {
-	http.StripPrefix("/images/", http.FileServer(http.Dir("."))).ServeHTTP(w, r)
-}
-
-// handleConfig tells the static page the two values it can't know on its
-// own: the main server's port (for its cross-origin /api/state poll) and
-// how long each slide should hold before crossfading. Kept as a separate
-// endpoint rather than templated into index.html so index.html/app.js stay
-// fully static, embedded files like internal/control-panel's.
-func (s *Slideshow) handleConfig(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(struct {
-		APIPort    string `json:"apiPort"`
-		IntervalMs int    `json:"intervalMs"`
-	}{s.apiPort, s.intervalMS})
+	http.StripPrefix("/images/", http.FileServer(http.Dir(s.parentDir))).ServeHTTP(w, r)
 }
 
 func (s *Slideshow) handleBkgd(w http.ResponseWriter, r *http.Request) {

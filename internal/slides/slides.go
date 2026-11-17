@@ -1,7 +1,5 @@
 // Package slides resolves a song id to its ordered slide deck for
-// internal/slideshow's kiosk page — the DefaultID/LogoID/missing-directory/
-// shuffle/logo-insertion rules live here, independent of the HTTP serving
-// that consumes them.
+// internal/slideshow's kiosk page.
 package slides
 
 import (
@@ -13,16 +11,6 @@ import (
 	"songarooni/internal/songs"
 	"strings"
 )
-
-// DefaultID is the sentinel song id that selects the "default" subdirectory
-// instead of a specific song's slides. Real song ids from songs file start at
-// 1, so 0 is never a valid song id.
-// const DefaultID = 0
-
-// LogoID is the sentinel id that shows just the logo, full-screen, instead
-// of any song's slide deck. Negative, so it can never collide with a real
-// song id (which must be positive) or DefaultID.
-// const LogoID = -1
 
 var supportedImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".mp4": true,

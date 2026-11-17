@@ -33,7 +33,7 @@ var supportedImageExts = map[string]string{
 	".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".mp4": "video",
 }
 
-func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error) {
+func LoadJSON(filename, slideDir string, includeEmptySongs bool, defaultLength time.Duration) ([]Song, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 	var filteredSongs []Song
 
 	for i, song := range songs {
-		if dataList, err := validateSlideDir(slideDir, song.Slides); err != nil {
+		if dataList, err := validateSlideDir(slideDir, song.Slides, defaultLength); err != nil {
 			// A broken slide directory is a slides-only problem: warn and
 			// keep the song, rather than refuse to start the whole app
 			// (click included) over it. slideshow.go already falls back to
@@ -76,7 +76,7 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool) ([]Song, error)
 
 // validateSlideDir confirms slideDir/slides exists and holds at least one
 // supported image file.
-func validateSlideDir(slideDir, slides string) ([]Data, error) {
+func validateSlideDir(slideDir, slides string, defaultLength time.Duration) ([]Data, error) {
 	dir := filepath.Join(slideDir, slides)
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -96,14 +96,16 @@ func validateSlideDir(slideDir, slides string) ([]Data, error) {
 			continue
 		}
 		if typ, ok := supportedImageExts[strings.ToLower(filepath.Ext(e.Name()))]; ok {
-			var length time.Duration
+			length := defaultLength
 			if typ == "video" {
-				// Placeholder for actual video length calculation
 				length, err = MP4Duration(filepath.Join(dir, e.Name()))
+				if err != nil {
+					log.Println("slide validation: error reading video duration for", e.Name(), ":", err)
+				}
 			}
 			dataList = append(dataList, Data{
-				Path:   filepath.Join(dir, e.Name()),
-				Length: length, // Placeholder, actual length calculation can be added later
+				Path:   filepath.Join(slides, e.Name()), // relative to slideDir, not absolute
+				Length: length,
 			})
 		}
 	}

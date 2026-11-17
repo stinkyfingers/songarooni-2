@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 	"net/url"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"songarooni/internal/slides"
@@ -71,19 +69,4 @@ func (s *Slideshow) cycle(ctx context.Context, deck []songs.Data) {
 		}
 		i = (i + 1) % len(deck)
 	}
-}
-
-// dwell is how long slide (a path relative to s.parentDir) should stay on
-// screen: an .mp4's own duration, or the configured slide_interval_seconds
-// for everything else — including an .mp4 whose duration can't be read, so
-// a malformed video file never stalls the whole deck.
-func (s *Slideshow) dwell(slide string) time.Duration {
-	if strings.HasSuffix(strings.ToLower(slide), ".mp4") {
-		d, err := songs.MP4Duration(filepath.Join(s.parentDir, slide))
-		if err == nil {
-			return d + crossfadePadding
-		}
-		log.Printf("display: reading %s duration: %v; falling back to the configured interval", slide, err)
-	}
-	return time.Duration(s.intervalMS)*time.Millisecond + crossfadePadding
 }
