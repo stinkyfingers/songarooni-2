@@ -33,6 +33,13 @@ type Slideshow struct {
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
 	stateChan       chan string
 
+	// advanceChan carries one signal per POST /advance — the browser's way
+	// of telling displayData it actually revealed the current slide, so
+	// the real dwell timer can start from when it was genuinely shown
+	// rather than from whenever it was pushed. Buffered so a POST never
+	// blocks waiting for displayData to be ready to receive it.
+	advanceChan chan struct{}
+
 	showMu     sync.Mutex
 	ctx        context.Context    // set by Run; Show's cycling goroutines exit when this is done
 	cancelShow context.CancelFunc // cancels whichever deck Show previously started cycling, if any
@@ -52,6 +59,7 @@ func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commerci
 		commercialEvery: commercialEvery,
 		apiPort:         apiPort,
 		stateChan:       make(chan string),
+		advanceChan:     make(chan struct{}, 1),
 		ctx:             context.Background(), // overwritten by Run; keeps Show safe to call even earlier
 	}
 }
@@ -70,6 +78,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
 	mux.HandleFunc("GET /images/", s.handleImages)
 	mux.HandleFunc("GET /events", s.sseHandler)
+	mux.HandleFunc("POST /advance", s.handleAdvance)
 	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css
 
 	server := &http.Server{Addr: s.addr, Handler: mux}
@@ -86,6 +95,20 @@ func (s *Slideshow) Run(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+// handleAdvance is the browser's "I actually revealed the current slide"
+// signal (called from app.js's reveal() and its load-error path alike —
+// either way, displayData should stop waiting). Non-blocking send: if a
+// signal is already pending (a duplicate POST, or one that arrived after
+// displayData gave up on it), this is a no-op rather than piling up a
+// second one that would wrongly short-circuit a later slide's own wait.
+func (s *Slideshow) handleAdvance(w http.ResponseWriter, r *http.Request) {
+	select {
+	case s.advanceChan <- struct{}{}:
+	default:
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Slideshow) sseHandler(w http.ResponseWriter, r *http.Request) {

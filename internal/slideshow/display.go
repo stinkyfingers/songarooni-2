@@ -16,6 +16,14 @@ import (
 // out.
 const crossfadePadding = 1 * time.Second
 
+// maxRevealWait caps how long displayData waits for the browser's
+// POST /advance before giving up and moving on anyway — a crashed tab, a
+// load error nothing else catches, or a network drop must never freeze
+// the whole show. Generous enough to cover a slow decode start on
+// underpowered hardware (a Pi 3, not a desktop) without being so long a
+// genuinely stuck client stalls everything for a long time.
+const maxRevealWait = 10 * time.Second
+
 // Show implements state.Display: it resolves id's slide deck and starts
 // cycling it, pushing each slide's URL to every connected SSE client (see
 // sseHandler) once per slide_interval_seconds. It returns immediately — the
@@ -85,11 +93,16 @@ func (s *Slideshow) cycle(ctx context.Context, deck, commercials, logos []songs.
 	}
 }
 
-// displayData pushes data's URL and dwells for its duration, returning
-// false if ctx was canceled partway through (or the path itself was bad) —
-// the caller must stop on false rather than looping again, since looping
-// on an already-canceled ctx would just busy-spin forever instead of
-// actually ending the goroutine.
+// displayData pushes data's URL, waits for the browser to actually reveal
+// it (POST /advance — see app.js's reveal() and its load-error path,
+// which both call it), and only then dwells for data's own duration —
+// timing the real on-screen duration from when the slide was genuinely
+// shown, not from whenever it was pushed. A slow decode start on
+// underpowered hardware no longer eats into the slide's own dwell time as
+// a result. Returns false if ctx was canceled partway through (or the
+// path itself was bad) — the caller must stop on false rather than
+// looping again, since looping on an already-canceled ctx would just
+// busy-spin forever instead of actually ending the goroutine.
 func (s *Slideshow) displayData(ctx context.Context, data songs.Data) bool {
 	u, err := url.JoinPath("/images", data.Path)
 	if err != nil {
@@ -99,6 +112,22 @@ func (s *Slideshow) displayData(ctx context.Context, data songs.Data) bool {
 
 	select {
 	case s.stateChan <- u:
+	case <-ctx.Done():
+		return false
+	}
+
+	// Discard any stale signal left over from a previous slide (e.g. a
+	// late POST that arrived after we'd already given up waiting for it)
+	// so it can't short-circuit this slide's own wait below.
+	select {
+	case <-s.advanceChan:
+	default:
+	}
+
+	select {
+	case <-s.advanceChan:
+	case <-time.After(maxRevealWait):
+		log.Printf("display: %s never acknowledged within %s; advancing anyway", u, maxRevealWait)
 	case <-ctx.Done():
 		return false
 	}

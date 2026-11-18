@@ -59,6 +59,7 @@
       layers[activeLayer].classList.remove("visible");
       newEl.classList.add("visible");
       activeLayer = nextLayer;
+      notifyAdvance(); // tell the server this slide is actually showing, so its dwell timer starts now
       if (newEl.tagName === "VIDEO") {
         // Explicit start, not autoplay — see makeLayerElement's comment:
         // this guarantees playback visibly begins at frame 0 the moment
@@ -69,10 +70,12 @@
       }
     };
     // A missing file (404, bad codec, etc.) fires "error" instead of
-    // "load"/"loadeddata" — just log it and wait for the server's next
-    // push; there's no local queue to skip ahead to.
+    // "load"/"loadeddata". There's no local queue to skip ahead to — but
+    // we still need to tell the server this slide is a lost cause so it
+    // doesn't sit waiting the full maxRevealWait before moving on.
     var onLoadError = function () {
       console.error("Failed to load slide:", url);
+      notifyAdvance();
     };
     // Images fire "load"; video elements don't — "loadeddata" is their
     // equivalent "ready to show a frame" event.
@@ -98,14 +101,23 @@
     document.getElementById("error").textContent = "";
   };
 
-  // Listen for the custom "tick" event sent by Go
-  eventSource.addEventListener("data", (event) => {
-    const url = event.data; // Assuming the event data is the URL of the slide
-    showSlide(url);
+  // Listen for the custom "data" event sent by Go (see sseHandler).
+  eventSource.addEventListener("data", function (event) {
+    showSlide(event.data);
   });
 
   eventSource.onerror = function () {
     console.log("SSE connection error; the browser will retry automatically");
     document.getElementById("error").textContent = "Failed to connect to server";
   };
+
+  // Tells the server this slide is actually showing (or has definitively
+  // failed to), so its dwell timer can start from real reveal time rather
+  // than from whenever it pushed the URL — see displayData's doc comment.
+  // Fire-and-forget: there's nothing useful to do with the response, and
+  // a failed POST here just means the server falls back to its own
+  // maxRevealWait timeout instead of hanging.
+  function notifyAdvance() {
+    fetch("/advance", { method: "POST" }).catch(function () {});
+  }
 })();

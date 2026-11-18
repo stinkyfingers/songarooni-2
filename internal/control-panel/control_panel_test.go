@@ -17,7 +17,8 @@ func (fakeClicker) Stop() error           { return nil }
 
 type fakeDisplay struct{}
 
-func (fakeDisplay) Show(id int) {}
+func (fakeDisplay) Show(id int)                    {}
+func (fakeDisplay) SetCustomIDs(ids state.CustomIDs) {}
 
 func testHandler() http.Handler {
 	catalog := []songs.Song{{ID: 1, Title: "Song One", Slides: "song-one", Tempo: 120}}

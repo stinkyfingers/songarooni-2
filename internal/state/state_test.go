@@ -38,6 +38,8 @@ func (f *fakeDisplay) Show(id int) {
 	f.shown = append(f.shown, id)
 }
 
+func (f *fakeDisplay) SetCustomIDs(ids CustomIDs) {}
+
 // testCatalog is two plain songs, already in the alphabetical order
 // songs.LoadJSON would produce (Honky Tonk Women, The Weight) — no
 // Default/Logo/Commercials entries, for tests that only care about normal
