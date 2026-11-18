@@ -17,7 +17,7 @@ func TestHandleImagesServesFromParentDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := New(":0", parentDir, nil, 0, 0, "8080")
+	s := New(":0", parentDir, nil, 0, 0, 0, "8080")
 	req := httptest.NewRequest("GET", "/images/song-one/1.png", nil)
 	w := httptest.NewRecorder()
 	s.handleImages(w, req)

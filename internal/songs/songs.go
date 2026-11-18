@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -49,7 +50,7 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool, defaultLength t
 	var filteredSongs []Song
 
 	for i, song := range songs {
-		if dataList, err := validateSlideDir(slideDir, song.Slides, defaultLength); err != nil {
+		if data, err := ValidateSlideDir(slideDir, song.Slides, defaultLength); err != nil {
 			// A broken slide directory is a slides-only problem: warn and
 			// keep the song, rather than refuse to start the whole app
 			// (click included) over it. slideshow.go already falls back to
@@ -63,7 +64,7 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool, defaultLength t
 			}
 		} else {
 			songs[i].HasImages = true
-			songs[i].Data = dataList
+			songs[i].Data = data
 			filteredSongs = append(filteredSongs, songs[i])
 		}
 	}
@@ -74,9 +75,9 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool, defaultLength t
 	return filteredSongs, nil
 }
 
-// validateSlideDir confirms slideDir/slides exists and holds at least one
+// ValidateSlideDir confirms slideDir/slides exists and holds at least one
 // supported image file.
-func validateSlideDir(slideDir, slides string, defaultLength time.Duration) ([]Data, error) {
+func ValidateSlideDir(slideDir, slides string, defaultLength time.Duration) ([]Data, error) {
 	dir := filepath.Join(slideDir, slides)
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -121,6 +122,10 @@ func validateSlideDir(slideDir, slides string, defaultLength time.Duration) ([]D
 	}
 	if len(dataList) == 0 {
 		return dataList, fmt.Errorf("no supported image files (.png, .jpg, .jpeg, .gif) in %s", dir)
+	}
+	for i := len(dataList) - 1; i > 0; i-- {
+		j := rand.Intn(i + 1)
+		dataList[i], dataList[j] = dataList[j], dataList[i]
 	}
 	return dataList, nil
 }

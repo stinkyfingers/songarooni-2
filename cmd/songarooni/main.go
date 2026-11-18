@@ -91,7 +91,7 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	// just whatever follows that one leading colon.
 	apiPort := strings.TrimPrefix(cfg.Addr, ":")
 
-	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, apiPort)
+	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, time.Duration(cfg.SlideIntervalSeconds)*time.Second, apiPort)
 	go func() {
 		if err := show.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("slideshow: Run exited: %v", err)

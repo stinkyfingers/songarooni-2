@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"songarooni/internal/slides"
 	"songarooni/internal/songs"
 )
 
@@ -34,21 +33,13 @@ const maxRevealWait = 10 * time.Second
 // new song, Default, or the logo) cancels whatever deck was previously
 // cycling; Run's ctx being done (app shutdown) cancels it too.
 func (s *Slideshow) Show(id int) {
-	deck, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, id)
+	deck, err := s.Resolve(id)
 	if err != nil {
 		log.Printf("display: error resolving slides for song id %d: %v", id, err)
 		return
 	}
-	commercials, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, s.customIDs.CommercialID)
-	if err != nil {
-		log.Printf("display: error resolving slides for song id %d: %v", id, err)
-		return
-	}
-	logos, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, s.customIDs.LogoID)
-	if err != nil {
-		log.Printf("display: error resolving slides for song id %d: %v", id, err)
-		return
-	}
+	commercials := s.resolveOptional(s.customIDs.CommercialID)
+	logos := s.resolveOptional(s.customIDs.LogoID)
 
 	s.showMu.Lock()
 	if s.cancelShow != nil {
@@ -139,4 +130,29 @@ func (s *Slideshow) displayData(ctx context.Context, data songs.Data) bool {
 	}
 
 	return true
+}
+
+// Resolve picks id's slide deck.
+func (s *Slideshow) Resolve(id int) ([]songs.Data, error) {
+	songDir, ok := s.songMap[id]
+	if !ok {
+		log.Println("slides: song id", id, "not found in songMap")
+		return []songs.Data{{Path: ""}}, nil
+	}
+	return songs.ValidateSlideDir(s.parentDir, songDir.Slides, s.defaultLength)
+}
+
+// resolveOptional is Resolve, but for a category that's allowed to be
+// legitimately empty — Commercials, Logo, and (once wired in) Candid.
+// Candid in particular starts every show with nothing uploaded yet, so a
+// missing/empty directory there just means "nothing to interleave yet,"
+// not a reason to abort the whole display the way an error from the main
+// song's own deck should.
+func (s *Slideshow) resolveOptional(id int) []songs.Data {
+	data, err := s.Resolve(id)
+	if err != nil {
+		log.Printf("display: %v (treating as empty)", err)
+		return nil
+	}
+	return data
 }
