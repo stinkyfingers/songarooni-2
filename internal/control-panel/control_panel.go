@@ -8,9 +8,15 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
 	"songarooni/internal/config"
 	"songarooni/internal/state"
@@ -106,14 +112,6 @@ func apiHandler(controller *state.Controller, configuration config.Config) http.
 		writeJSON(w, http.StatusOK, controller.GetState())
 	})
 
-	mux.HandleFunc("POST /api/select/default", func(w http.ResponseWriter, r *http.Request) {
-		if err := controller.StartDefault(); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, controller.GetState())
-	})
-
 	mux.HandleFunc("POST /api/start", func(w http.ResponseWriter, r *http.Request) {
 		if err := controller.Start(); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -166,7 +164,107 @@ func apiHandler(controller *state.Controller, configuration config.Config) http.
 		writeJSON(w, http.StatusOK, controller.GetState())
 	})
 
+	mux.HandleFunc("POST /api/candid/upload", func(w http.ResponseWriter, r *http.Request) {
+		handleCandidUpload(w, r, configuration.SlideDir)
+	})
+
 	return mux
+}
+
+// maxCandidUploadBytes bounds the whole multipart request — a backstop
+// behind the client's own canvas-resize-to-JPEG step (see app.js), not
+// the primary size control. Generous enough for several resized photos
+// at once without ever letting an unprocessed multi-megapixel original
+// through by accident.
+const maxCandidUploadBytes = 50 << 20 // 50MB
+
+// candidContentTypes maps a sniffed MIME type (via http.DetectContentType,
+// not the client-supplied Content-Type or filename extension, both
+// trivially wrong) to the extension saved files get. Deliberately narrow:
+// only what the client's own resize step can actually produce, or a
+// plain image passed through unresized.
+var candidContentTypes = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/gif":  ".gif",
+}
+
+// handleCandidUpload saves one or more uploaded photos into
+// slideDir/candid/ — Slideshow.Show already picks up anything there fresh
+// on its next call (see internal/slideshow's Resolve), so nothing here
+// needs to notify the display explicitly.
+func handleCandidUpload(w http.ResponseWriter, r *http.Request, slideDir string) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCandidUploadBytes)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	files := r.MultipartForm.File["photos"]
+	if len(files) == 0 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("no files in request"))
+		return
+	}
+
+	dir := filepath.Join(slideDir, "candid")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	saved := 0
+	var failures []string
+	for i, fh := range files {
+		if err := saveCandidUpload(dir, i, fh); err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", fh.Filename, err))
+			continue
+		}
+		saved++
+	}
+
+	status := http.StatusOK
+	if saved == 0 {
+		status = http.StatusBadRequest
+	}
+	writeJSON(w, status, map[string]any{"saved": saved, "errors": failures})
+}
+
+// saveCandidUpload writes one uploaded file into dir under a
+// collision-safe name — a nanosecond timestamp plus the file's index
+// within this request, since multiple phones uploading at the same
+// moment (or one phone uploading several files in one picker trip) is a
+// real scenario here, unlike every other slide category whose files are
+// prepared and copied on ahead of time.
+func saveCandidUpload(dir string, seq int, fh *multipart.FileHeader) error {
+	f, err := fh.Open()
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	sniff := make([]byte, 512)
+	n, err := io.ReadFull(f, sniff)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return err
+	}
+	contentType := http.DetectContentType(sniff[:n])
+	ext, ok := candidContentTypes[contentType]
+	if !ok {
+		return fmt.Errorf("unsupported file type %q", contentType)
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	name := fmt.Sprintf("%d_%d%s", time.Now().UnixNano(), seq, ext)
+	out, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, f)
+	return err
 }
 
 // statusFor picks 404 for an unknown song id and 400 for everything else

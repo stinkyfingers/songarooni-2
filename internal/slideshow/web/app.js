@@ -1,39 +1,9 @@
 (function () {
   "use strict";
 
-  var POLL_MS = 750; // matches the control panel's own phone-page poll interval
-  var DEFAULT_ID = 0;
-  var LOGO_ID = -1;
-
   var layers = [document.getElementById("a"), document.getElementById("b")];
   var activeLayer = 0;
-  var urls = [];
-  var slideIdx = 0;
-  var cycleTimer = null;
-  var lastShownID = null;
   var videoSuffixes = [".mp4"];
-  var consecutiveLoadErrors = 0; // guards against a tight retry loop if every slide 404s
-
-  // Fetched once at startup from this server's own /config — apiPort (the
-  // main server's port, for the cross-origin /api/state poll below) and
-  // intervalMs (how long each slide holds before crossfading, from
-  // config.yaml's slide_interval_seconds) aren't known until then.
-  var apiPort = null;
-  var intervalMs = null;
-
-  function apiURL(path) {
-    return "http://" + location.hostname + ":" + apiPort + path;
-  }
-
-  // Playing drives the display, not Selected — matching how
-  // internal/state's Display.Show is driven (only Start/ToggleLogo call
-  // it), and what every real song/Default/Logo transition actually means
-  // to someone watching the venue screen rather than the phone.
-  function currentID(state) {
-    if (state.logoActive) return LOGO_ID;
-    if (state.running) return state.playingSongId;
-    return DEFAULT_ID;
-  }
 
   function isVideo(url) {
     return videoSuffixes.some(function (s) { return url.toLowerCase().endsWith(s); });
@@ -49,11 +19,8 @@
       // No autoplay: on slow hardware (the Pi, not a desktop), decoding can
       // lag far enough behind that autoplay has already advanced playback
       // a second or more before our "loadeddata" handler even runs — the
-      // video is then revealed mid-playback, plays to the end, loops back
-      // to the true start, and gets cut off there by scheduleNext before
-      // finishing. Starting playback ourselves in reveal() below, at the
-      // exact moment it's actually shown, is what fixes that.
-      // el.loop = true; // safety net only — scheduleNext advances after one real play-through
+      // video is then revealed mid-playback. Starting playback ourselves in
+      // reveal() below, at the exact moment it's actually shown, fixes that.
       el.muted = true;
       el.playsInline = true; // avoid iOS/Safari forcing fullscreen takeover on autoplay
       el.preload = "auto"; // buffer eagerly rather than conservatively — reduces jerky playback on the Pi
@@ -65,25 +32,9 @@
     return el;
   }
 
-  // How long el should stay on screen before advancing: a video's own
-  // duration (now known — this runs at "loadeddata" time, after
-  // "loadedmetadata" has already fired), or the configured interval for
-  // everything else, including a video whose duration never resolves to a
-  // real number (some files briefly report Infinity/NaN).
-  function dwellMs(el) {
-    const paddingMs = 2000; // add a couple seconds to let the fade-out finish before the next slide starts
-    if (el.tagName === "VIDEO" && isFinite(el.duration) && el.duration > 0) {
-      return el.duration * 1000 + paddingMs; // add a couple seconds to let the fade-out finish before the next slide starts
-    }
-    return intervalMs + paddingMs;
-  }
-
-  function scheduleNext(el) {
-    if (cycleTimer) clearTimeout(cycleTimer);
-    if (urls.length <= 1) return; // nothing else to cycle to
-    cycleTimer = setTimeout(advance, dwellMs(el));
-  }
-
+  // Crossfades to url. There's no local deck or timer here — the server
+  // decides what to show and when by pushing one URL per SSE message; this
+  // just renders whatever arrives.
   function showSlide(url) {
     var nextLayer = 1 - activeLayer;
     var oldEl = layers[nextLayer];
@@ -108,6 +59,7 @@
       layers[activeLayer].classList.remove("visible");
       newEl.classList.add("visible");
       activeLayer = nextLayer;
+      notifyAdvance(); // tell the server this slide is actually showing, so its dwell timer starts now
       if (newEl.tagName === "VIDEO") {
         // Explicit start, not autoplay — see makeLayerElement's comment:
         // this guarantees playback visibly begins at frame 0 the moment
@@ -116,25 +68,17 @@
         newEl.currentTime = 0;
         newEl.play();
       }
-      consecutiveLoadErrors = 0;
-      scheduleNext(newEl); // dwell time starts now, once it's actually showing
     };
     // A missing file (404, bad codec, etc.) fires "error" instead of
-    // "load"/"loadeddata" — reveal() never runs, so nothing would ever
-    // advance past it without this. Skip straight to the next slide; if
-    // every slide in the list is bad, fall back to waiting a normal
-    // interval between attempts instead of hammering the server.
+    // "load"/"loadeddata". There's no local queue to skip ahead to — but
+    // we still need to tell the server this slide is a lost cause so it
+    // doesn't sit waiting the full maxRevealWait before moving on.
     var onLoadError = function () {
-      consecutiveLoadErrors++;
-      if (consecutiveLoadErrors >= Math.max(urls.length, 1)) {
-        cycleTimer = setTimeout(advance, intervalMs);
-      } else {
-        advance();
-      }
+      console.error("Failed to load slide:", url);
+      notifyAdvance();
     };
     // Images fire "load"; video elements don't — "loadeddata" is their
-    // equivalent "ready to show a frame" event, and by then .duration is
-    // already known.
+    // equivalent "ready to show a frame" event.
     if (newEl.tagName === "VIDEO") {
       newEl.addEventListener("loadeddata", reveal, { once: true });
       newEl.addEventListener("error", onLoadError, { once: true });
@@ -147,48 +91,33 @@
     layers[nextLayer] = newEl; // keep the array pointed at the real current DOM element
   }
 
-  function advance() {
-    if (urls.length === 0) return;
-    var url = urls[slideIdx];
-    slideIdx = (slideIdx + 1) % urls.length;
-    showSlide(url);
-  }
+  // Pushed by this server's own /events route — each message's data is the
+  // next slide's URL to show. No polling: the server alone decides what
+  // plays and when, and the page just reacts. EventSource reconnects on
+  // its own after a drop, so no manual retry handling is needed here.
+  var eventSource = new EventSource("/events");
+  eventSource.onopen = function () {
+    console.log("SSE connected");
+    document.getElementById("error").textContent = "";
+  };
 
-  function restartCycle() {
-    if (cycleTimer) clearTimeout(cycleTimer);
-    slideIdx = 0;
-    advance(); // shows the first slide; its own reveal() schedules the next
-  }
+  // Listen for the custom "data" event sent by Go (see sseHandler).
+  eventSource.addEventListener("data", function (event) {
+    showSlide(event.data);
+  });
 
-  function loadSlides(id) {
-    fetch("/slides?id=" + id)
-      .then(function (res) { return res.json(); })
-      .then(function (got) {
-        urls = got;
-        restartCycle();
-      })
-      .catch(function () { /* transient fetch error; keep showing whatever's up */ });
-  }
+  eventSource.onerror = function () {
+    console.log("SSE connection error; the browser will retry automatically");
+    document.getElementById("error").textContent = "Failed to connect to server";
+  };
 
-  function poll() {
-    fetch(apiURL("/api/state"))
-      .then(function (res) { return res.json(); })
-      .then(function (state) {
-        var id = currentID(state);
-        if (id !== lastShownID) {
-          lastShownID = id;
-          loadSlides(id);
-        }
-      })
-      .catch(function () { /* main server unreachable momentarily; keep showing whatever's up */ });
+  // Tells the server this slide is actually showing (or has definitively
+  // failed to), so its dwell timer can start from real reveal time rather
+  // than from whenever it pushed the URL — see displayData's doc comment.
+  // Fire-and-forget: there's nothing useful to do with the response, and
+  // a failed POST here just means the server falls back to its own
+  // maxRevealWait timeout instead of hanging.
+  function notifyAdvance() {
+    fetch("/advance", { method: "POST" }).catch(function () {});
   }
-
-  fetch("/config")
-    .then(function (res) { return res.json(); })
-    .then(function (cfg) {
-      apiPort = cfg.apiPort;
-      intervalMs = cfg.intervalMs;
-      poll();
-      setInterval(poll, POLL_MS);
-    });
 })();

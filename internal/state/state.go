@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"songarooni/internal/click"
-	"songarooni/internal/slides"
 	"songarooni/internal/songs"
 )
 
@@ -20,11 +19,8 @@ import (
 // whatever does need a direct push notification instead.
 type Display interface {
 	Show(id int)
+	SetCustomIDs(ids CustomIDs)
 }
-
-// defaultTempo is the Default entry's starting tempo, before anyone sets
-// one via SetDefaultTempo.
-const defaultTempo = 120
 
 // State is a snapshot of current playback state, safe to copy and return
 // from an API handler.
@@ -58,9 +54,9 @@ type State struct {
 type Controller struct {
 	mu sync.Mutex
 
-	catalog     []*songs.Song
-	byID        map[int]*songs.Song
-	defaultSong *songs.Song // same pointer as byID[slides.DefaultID]
+	catalog   []*songs.Song
+	byID      map[int]*songs.Song
+	customIDs CustomIDs
 
 	selected   *songs.Song
 	playing    *songs.Song
@@ -72,35 +68,46 @@ type Controller struct {
 	display Display
 }
 
+type CustomIDs struct {
+	DefaultID    int
+	LogoID       int
+	CommercialID int
+	CandidID     int
+}
+
 // New builds a Controller over catalog, driving clicker and display. A
 // synthetic "Default" entry (id slides.DefaultID) is always added, for
 // clicking at a manually-set tempo on songs that aren't in the catalog —
 // songs.LoadFile never produces id 0 itself, so this
 // can't collide with a real song.
 func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controller {
-	defaultSong := &songs.Song{
-		ID:        slides.DefaultID,
-		Title:     "Default",
-		Slides:    "default",
-		Tempo:     defaultTempo,
-		HasImages: true, // validated separately via default_slideshow at slideshow.New() time, not here
-	}
+	customIds := CustomIDs{}
 
-	all := make([]*songs.Song, 0, len(catalog)+1)
-	all = append(all, defaultSong)
-	byID := map[int]*songs.Song{defaultSong.ID: defaultSong}
+	all := make([]*songs.Song, 0, len(catalog))
+	byID := map[int]*songs.Song{}
 	for i := range catalog {
 		s := &catalog[i]
 		all = append(all, s)
 		byID[s.ID] = s
+		switch s.Category {
+		case "default":
+			customIds.DefaultID = s.ID
+		case "logo":
+			customIds.LogoID = s.ID
+		case "commercials":
+			customIds.CommercialID = s.ID
+		case "candid":
+			customIds.CandidID = s.ID
+		}
 	}
+	display.SetCustomIDs(customIds)
 
 	return &Controller{
-		catalog:     all,
-		byID:        byID,
-		defaultSong: defaultSong,
-		clicker:     clicker,
-		display:     display,
+		catalog:   all,
+		byID:      byID,
+		customIDs: customIds,
+		clicker:   clicker,
+		display:   display,
 	}
 }
 
@@ -134,8 +141,7 @@ func (c *Controller) SelectSong(id int) error {
 }
 
 // SelectNext and SelectPrevious move the selection by one through the
-// catalog's native order (alphabetical, per songs.LoadFile; Default
-// excluded, same as the phone's song list) — wrapping at either end. If
+// catalog's native order, wrapping at either end. If
 // nothing is selected yet, SelectNext starts at the first real song and
 // SelectPrevious at the last. Built for the foot pedal, which has no
 // song-list UI of its own to pick from directly; always allowed, same as
@@ -154,9 +160,7 @@ func (c *Controller) SelectRelative(delta int) error {
 
 	var order []*songs.Song
 	for _, s := range c.catalog {
-		if s.ID != slides.DefaultID {
-			order = append(order, s)
-		}
+		order = append(order, s)
 	}
 	if len(order) == 0 {
 		return fmt.Errorf("no songs in catalog")
@@ -193,7 +197,7 @@ func (c *Controller) SelectRelative(delta int) error {
 // press and can't sequence two separate API calls the way the phone's
 // Default button does (select, then start, as two awaited fetches).
 func (c *Controller) StartDefault() error {
-	if err := c.SelectSong(slides.DefaultID); err != nil {
+	if err := c.SelectSong(c.customIDs.DefaultID); err != nil {
 		return err
 	}
 	return c.Start()
@@ -294,11 +298,17 @@ func (c *Controller) SetDefaultTempo(bpm int) error {
 	if bpm <= 0 {
 		return fmt.Errorf("tempo must be positive")
 	}
-	c.defaultSong.Tempo = bpm
 
-	if c.playing != c.defaultSong || c.muted {
+	def, ok := c.byID[c.customIDs.DefaultID]
+	if !ok {
+		return fmt.Errorf("no Default entry in the catalog")
+	}
+	def.Tempo = bpm // takes effect on the next Start even if Default isn't playing right now
+
+	if c.muted || c.playing == nil || c.playing.ID != def.ID {
 		return nil
 	}
+
 	if err := c.clicker.Stop(); err != nil {
 		c.lastErr = err.Error()
 		return err
@@ -323,12 +333,12 @@ func (c *Controller) ToggleLogo() error {
 		if c.playing != nil {
 			c.display.Show(c.playing.ID)
 		} else {
-			c.display.Show(slides.DefaultID)
+			c.display.Show(c.customIDs.DefaultID)
 		}
 		return nil
 	}
 	c.logoActive = true
-	c.display.Show(slides.LogoID)
+	c.display.Show(c.customIDs.LogoID)
 	return nil
 }
 

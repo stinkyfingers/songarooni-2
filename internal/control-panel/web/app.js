@@ -27,6 +27,8 @@ const el = {
   muteBtn: document.getElementById('mute-btn'),
   logoBtn: document.getElementById('logo-btn'),
   defaultBtn: document.getElementById('default-btn'),
+  candidBtn: document.getElementById('candid-btn'),
+  candidInput: document.getElementById('candid-input'),
   error: document.getElementById('error'),
 };
 
@@ -67,8 +69,7 @@ function populateSortOptions() {
 function sortedSongs() {
   const query = el.search.value.trim().toLowerCase();
   let list = songs
-    .filter((s) => !query || s.title.toLowerCase().includes(query))
-    .filter((s) => s.id !== DEFAULT_SONG_ID) // hide Default from song list
+    .filter((s) => !query || s.title.toLowerCase().includes(query) || s.artist?.toLowerCase().includes(query))
     .sort((a, b) => a.title.localeCompare(b.title)); // always sort by ID first, so that the catalog order is stable
 
   switch (sortBy) {
@@ -252,6 +253,71 @@ el.defaultBtn.addEventListener('click', async () => {
   try {
     state = await api('POST', '/api/start');
     renderState();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+// CANDID_MAX_DIMENSION/CANDID_JPEG_QUALITY: the venue display (a Chromium
+// kiosk browser) can't render HEIC in an <img> tag at all, so every
+// upload gets re-encoded to JPEG client-side first — Safari, running on
+// whatever phone is actually doing the upload, can decode HEIC into a
+// canvas even though Chromium can't display it directly. The same step
+// also caps resolution: there's no reason to ship a full-resolution
+// phone photo when nothing downstream can show more than a fraction of
+// that detail on a TV-sized screen.
+const CANDID_MAX_DIMENSION = 1920;
+const CANDID_JPEG_QUALITY = 0.85;
+
+function resizeToJPEG(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      const longEdge = Math.max(width, height);
+      if (longEdge > CANDID_MAX_DIMENSION) {
+        const scale = CANDID_MAX_DIMENSION / longEdge;
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error(`could not process ${file.name}`));
+      }, 'image/jpeg', CANDID_JPEG_QUALITY);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`could not load ${file.name}`));
+    };
+    img.src = url;
+  });
+}
+
+el.candidBtn.addEventListener('click', () => el.candidInput.click());
+
+el.candidInput.addEventListener('change', async () => {
+  const files = Array.from(el.candidInput.files || []);
+  el.candidInput.value = ''; // allow re-selecting the same file(s) next time
+  if (files.length === 0) return;
+
+  try {
+    const jpegs = await Promise.all(files.map(resizeToJPEG));
+    const formData = new FormData();
+    jpegs.forEach((blob, i) => formData.append('photos', blob, `candid-${Date.now()}-${i}.jpg`));
+
+    // Not using the shared api() helper — it always JSON-encodes the
+    // body, but a file upload needs a multipart FormData body instead
+    // (the browser sets the boundary itself; no Content-Type override).
+    const res = await fetch('/api/candid/upload', { method: 'POST', body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `upload failed (${res.status})`);
+    showError(data.saved ? '' : 'No photos were saved');
   } catch (err) {
     showError(err.message);
   }

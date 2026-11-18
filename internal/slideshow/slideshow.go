@@ -12,32 +12,40 @@ package slideshow
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"net/http"
-	"path/filepath"
-	"strconv"
+	"sync"
+	"time"
 
-	"songarooni/internal/slides"
+	"songarooni/internal/songs"
+	"songarooni/internal/state"
 )
-
-//go:embed logo.png
-var embeddedLogo []byte
 
 //go:embed bkgd.jpg
 var embeddedBkgd []byte
 
-// Slideshow serves the kiosk page over HTTP. It holds no "currently
-// showing" state of its own — the page it serves polls the main server for
-// that itself (see poll() in web/app.js) — so unlike a push-driven display,
-// the Controller it runs alongside just uses a no-op Display.
+// Slideshow serves the kiosk page over HTTP.
 type Slideshow struct {
 	addr            string
 	parentDir       string // config's SlideDir
-	songMap         map[int]string
+	songMap         map[int]songs.Song
 	logoEvery       int
 	commercialEvery int
-	intervalMS      int
+	candidEvery     int
+	defaultLength   time.Duration
+	customIDs       state.CustomIDs
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
+	stateChan       chan string
+
+	// advanceChan carries one signal per POST /advance — the browser's way
+	// of telling displayData it actually revealed the current slide, so
+	// the real dwell timer can start from when it was genuinely shown
+	// rather than from whenever it was pushed. Buffered so a POST never
+	// blocks waiting for displayData to be ready to receive it.
+	advanceChan chan struct{}
+
+	showMu     sync.Mutex
+	ctx        context.Context    // set by Run; Show's cycling goroutines exit when this is done
+	cancelShow context.CancelFunc // cancels whichever deck Show previously started cycling, if any
 }
 
 // New prepares a Slideshow listening on addr. apiPort is the main server's
@@ -45,26 +53,37 @@ type Slideshow struct {
 // reaches the main server at the same hostname it reaches this one at,
 // just a different port, so only the port number needs to travel to the
 // page, not a full URL.
-func New(addr, parentDir string, songMap map[int]string, logoEvery, commercialEvery, slideIntervalSeconds int, apiPort string) *Slideshow {
+func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commercialEvery, candidEvery int, defaultLength time.Duration, apiPort string) *Slideshow {
 	return &Slideshow{
 		addr:            addr,
 		parentDir:       parentDir,
 		songMap:         songMap,
 		logoEvery:       logoEvery,
 		commercialEvery: commercialEvery,
-		intervalMS:      slideIntervalSeconds * 1000,
+		candidEvery:     candidEvery,
+		defaultLength:   defaultLength,
 		apiPort:         apiPort,
+		stateChan:       make(chan string),
+		advanceChan:     make(chan struct{}, 1),
+		ctx:             context.Background(), // overwritten by Run; keeps Show safe to call even earlier
 	}
+}
+
+func (s *Slideshow) SetCustomIDs(ids state.CustomIDs) {
+	s.customIDs = ids
 }
 
 // Run serves the kiosk page and its assets until ctx is done.
 func (s *Slideshow) Run(ctx context.Context) error {
+	s.showMu.Lock()
+	s.ctx = ctx
+	s.showMu.Unlock()
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /config", s.handleConfig)
-	mux.HandleFunc("GET /logo.png", s.handleLogo)
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
-	mux.HandleFunc("GET /slides", s.handleSlides)
 	mux.HandleFunc("GET /images/", s.handleImages)
+	mux.HandleFunc("GET /events", s.sseHandler)
+	mux.HandleFunc("POST /advance", s.handleAdvance)
 	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css
 
 	server := &http.Server{Addr: s.addr, Handler: mux}
@@ -83,68 +102,50 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	}
 }
 
+// handleAdvance is the browser's "I actually revealed the current slide"
+// signal (called from app.js's reveal() and its load-error path alike —
+// either way, displayData should stop waiting). Non-blocking send: if a
+// signal is already pending (a duplicate POST, or one that arrived after
+// displayData gave up on it), this is a no-op rather than piling up a
+// second one that would wrongly short-circuit a later slide's own wait.
+func (s *Slideshow) handleAdvance(w http.ResponseWriter, r *http.Request) {
+	select {
+	case s.advanceChan <- struct{}{}:
+	default:
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Slideshow) sseHandler(w http.ResponseWriter, r *http.Request) {
+	// Set required SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Ensure the ResponseWriter supports flushing
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	for {
+		select {
+		case msg := <-s.stateChan:
+			w.Write([]byte("event: data\ndata: " + msg + "\n\n"))
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+
+}
+
 func (s *Slideshow) handleImages(w http.ResponseWriter, r *http.Request) {
 	http.StripPrefix("/images/", http.FileServer(http.Dir(s.parentDir))).ServeHTTP(w, r)
-}
-
-// handleConfig tells the static page the two values it can't know on its
-// own: the main server's port (for its cross-origin /api/state poll) and
-// how long each slide should hold before crossfading. Kept as a separate
-// endpoint rather than templated into index.html so index.html/app.js stay
-// fully static, embedded files like internal/control-panel's.
-func (s *Slideshow) handleConfig(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(struct {
-		APIPort    string `json:"apiPort"`
-		IntervalMs int    `json:"intervalMs"`
-	}{s.apiPort, s.intervalMS})
-}
-
-func (s *Slideshow) handleLogo(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "image/png")
-	_, _ = w.Write(embeddedLogo)
 }
 
 func (s *Slideshow) handleBkgd(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	_, _ = w.Write(embeddedBkgd)
-}
-
-// handleSlides resolves ?id=<song id> to its ordered slide URLs (JSON
-// array of strings), using internal/slides for the actual
-// DefaultID/LogoID/missing-directory/shuffle/logo-insertion resolution.
-func (s *Slideshow) handleSlides(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.URL.Query().Get("id"))
-	if err != nil {
-		http.Error(w, "invalid or missing id", http.StatusBadRequest)
-		return
-	}
-
-	filenames, err := slides.Resolve(s.parentDir, s.songMap, s.logoEvery, s.commercialEvery, id)
-	if err != nil {
-		// just show logo
-		filenames = []string{""}
-	}
-
-	urls := make([]string, len(filenames))
-	for i, f := range filenames {
-		urls[i] = slideURL(f)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store") // a song's own deck is shuffled fresh per Resolve call; never cache
-	if err := json.NewEncoder(w).Encode(urls); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// slideURL maps one of deck's Files entries to the URL that'll actually
-// serve it: "/logo.png" for a logo marker, otherwise under whichever of
-// /images/song/ or /images/default/ matches deck.Base — url.URL handles
-// percent-encoding any special characters in filenames.
-func slideURL(file string) string {
-	if file == "" {
-		return "/logo.png"
-	}
-	return filepath.Join("/images", file)
 }

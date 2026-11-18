@@ -21,17 +21,17 @@ test:
 	go test ./...
 
 # Ships the whole per-show app bundle in one shot: the binary, songs.csv,
-# every scripts/ file start.sh depends on at runtime (connect-pedal.sh), and
-# songarooni.desktop (the one-time desktop-icon launcher — see README.md's
-# "One-time Pi setup" section for the single manual step to activate it;
-# this just keeps it up to date on the Pi alongside everything else).
+# scripts/start.sh, and songarooni.desktop (the one-time desktop-icon
+# launcher — see README.md's "One-time Pi setup" section for the single
+# manual step to activate it; this just keeps it up to date on the Pi
+# alongside everything else).
 # rsync (not scp) so it's one command for a list of files and so executable
 # bits survive the copy. Deliberately NOT included:
 #   - media/ — slide images are copied onto the Pi by hand over USB, not
 #     synced from here.
-#   - One-time Pi system setup (triggerhappy's config, Bluetooth persistence,
-#     sudoers) — see README.md's "One-time Pi setup" section; those install
-#     into system paths once and aren't part of the recurring app bundle.
+#   - One-time Pi system setup (sudoers) — see README.md's "One-time Pi
+#     setup" section; that installs into a system path once and isn't part
+#     of the recurring app bundle.
 # config.prod.yaml (gitignored, machine-local — holds this Pi's real
 # hardware paths: the USB slide_dir, its actual audio_device, etc.) is what
 # ships, renamed to config.yaml on the Pi, since the binary always looks for
@@ -41,7 +41,7 @@ test:
 deploy: build-pi
 	rsync -av \
 		$(DIST)/$(BINARY) songs.json \
-		scripts/start.sh scripts/connect-pedal.sh scripts/songarooni.desktop \
+		scripts/start.sh scripts/songarooni.desktop \
 		$(HOST):$(REMOTE_DIR)
 	rsync -av config.prod.yaml $(HOST):$(REMOTE_DIR)config.yaml
 

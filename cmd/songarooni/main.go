@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	control_panel "songarooni/internal/control-panel"
 
@@ -43,11 +44,13 @@ func main() {
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir, cfg.IncludeEmptySongs)
+	catalog, err := songs.LoadJSON(cfg.SongsFile, cfg.SlideDir, cfg.IncludeEmptySongs, time.Duration(cfg.SlideIntervalSeconds)*time.Second)
 	if err != nil {
 		log.Fatalf("songs.json invalid, refusing to start:\n%v", err)
 	}
 	log.Printf("loaded %d songs from %s", len(catalog), cfg.SongsFile)
+
+	cleanCandidDir(cfg.SlideDir, catalog)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -78,14 +81,11 @@ func main() {
 }
 
 // buildDisplay starts the slideshow kiosk server and launches a kiosk
-// browser pointed at it. The Controller's Display stays a no-op: the kiosk
-// page figures out what to show by polling the control panel's /api/state
-// itself (see plans/browser-slideshow-plan.md) rather than the Go side
-// pushing to it.
+// browser pointed at it.
 func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) state.Display {
-	songMap := make(map[int]string, len(catalog))
+	songMap := make(map[int]songs.Song, len(catalog))
 	for _, s := range catalog {
-		songMap[s.ID] = s.Slides
+		songMap[s.ID] = s
 	}
 
 	// cfg.Addr is always a bare ":PORT" in this app (see config.yaml's own
@@ -93,7 +93,7 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	// just whatever follows that one leading colon.
 	apiPort := strings.TrimPrefix(cfg.Addr, ":")
 
-	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, cfg.SlideIntervalSeconds, apiPort)
+	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, cfg.CandidFrequency, time.Duration(cfg.SlideIntervalSeconds)*time.Second, apiPort)
 	go func() {
 		if err := show.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("slideshow: Run exited: %v", err)
@@ -108,11 +108,23 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 		}
 	}()
 
-	return noopDisplay{}
+	return show
 }
 
-type noopDisplay struct{}
-
-func (noopDisplay) Show(id int) {
-	log.Printf("display: (no-op) would show song id %d", id)
+// cleanCandidDir removes any existing files in the candid slide directory.
+func cleanCandidDir(slideDir string, catalog []songs.Song) {
+	var dir string
+	for _, c := range catalog {
+		if c.Category == "candid" {
+			dir = c.Slides
+			break
+		}
+	}
+	candidDir := fmt.Sprintf("%s/%s", slideDir, dir)
+	if err := os.RemoveAll(candidDir); err != nil {
+		log.Printf("cleaning candid dir %s: %v", candidDir, err)
+	}
+	if err := os.MkdirAll(candidDir, 0755); err != nil {
+		log.Printf("creating candid dir %s: %v", candidDir, err)
+	}
 }

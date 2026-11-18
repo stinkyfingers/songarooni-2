@@ -44,9 +44,9 @@ const evKey = 0x01 // EV_KEY, from <linux/input-event-codes.h>
 
 // Key codes (see <linux/input-event-codes.h>) for the four keys the pedal
 // is wired to send (plans/pedal-connection-plan.md Part 3): Page Up/Down
-// move the selection, Enter starts whatever's selected, Space
-// selects-and-starts Default. Stop is deliberately not bound here — it's
-// UI-only, from the phone.
+// move the selection by one, Enter starts whatever's selected, Space moves
+// it by bulkSelectDelta (a quick way to jump through a long list). Stop is
+// deliberately not bound here — it's UI-only, from the phone.
 const (
 	keyEnter    = 28
 	keySpace    = 57
