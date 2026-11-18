@@ -40,6 +40,7 @@ func (s *Slideshow) Show(id int) {
 	}
 	commercials := s.resolveOptional(s.customIDs.CommercialID)
 	logos := s.resolveOptional(s.customIDs.LogoID)
+	candid := s.resolveOptional(s.customIDs.CandidID)
 
 	s.showMu.Lock()
 	if s.cancelShow != nil {
@@ -49,22 +50,36 @@ func (s *Slideshow) Show(id int) {
 	s.cancelShow = cancel
 	s.showMu.Unlock()
 
-	go s.cycle(ctx, deck, commercials, logos)
+	go s.cycle(ctx, id, deck, commercials, logos, candid)
 }
 
 // cycle pushes deck's slides to stateChan one at a time, holding each on
 // screen for its own dwell duration (see dwell) before moving to the next,
 // until ctx is done.
-func (s *Slideshow) cycle(ctx context.Context, deck, commercials, logos []songs.Data) {
+func (s *Slideshow) cycle(ctx context.Context, id int, deck, commercials, logos, candid []songs.Data) {
 	commercialIndex := 0
 	logoIndex := 0
+	candidIndex := 0
 	i := 0
+	advanceIndex := func() {
+		i = (i + 1) % len(deck)
+	}
 	for {
 		data := deck[i]
 		if !s.displayData(ctx, data) {
 			return // ctx was canceled (or the path was unjoinable) — stop the goroutine, same as the old inline return did
 		}
-		if i%s.logoEvery == s.logoEvery-1 && len(logos) > 0 {
+		// no extras on logos
+		if id == s.customIDs.LogoID {
+			advanceIndex()
+			continue
+		}
+
+		// s.logoEvery/commercialEvery/candidEvery <= 0 means "disabled"
+		// (see config.go's doc comments) — checked before the modulo, not
+		// just via len(...) > 0, since i % 0 panics regardless of whether
+		// the deck is empty.
+		if s.logoEvery > 0 && i%s.logoEvery == s.logoEvery-1 && len(logos) > 0 {
 			if !s.displayData(ctx, logos[logoIndex]) {
 				return
 			}
@@ -72,7 +87,13 @@ func (s *Slideshow) cycle(ctx context.Context, deck, commercials, logos []songs.
 				logoIndex = 0
 			}
 		}
-		if i%s.commercialEvery == s.commercialEvery-1 && len(commercials) > 0 {
+		// only logos are exempt from commercials
+		if id == s.customIDs.CommercialID {
+			advanceIndex()
+			continue
+		}
+
+		if s.commercialEvery > 0 && i%s.commercialEvery == s.commercialEvery-1 && len(commercials) > 0 {
 			if !s.displayData(ctx, commercials[commercialIndex]) {
 				return
 			}
@@ -80,7 +101,20 @@ func (s *Slideshow) cycle(ctx context.Context, deck, commercials, logos []songs.
 				commercialIndex = 0
 			}
 		}
-		i = (i + 1) % len(deck)
+		// candids are exempt from candids
+		if id == s.customIDs.CandidID {
+			advanceIndex()
+			continue
+		}
+		if s.candidEvery > 0 && i%s.candidEvery == s.candidEvery-1 && len(candid) > 0 {
+			if !s.displayData(ctx, candid[candidIndex]) {
+				return
+			}
+			if candidIndex++; candidIndex >= len(candid) {
+				candidIndex = 0
+			}
+		}
+		advanceIndex()
 	}
 }
 

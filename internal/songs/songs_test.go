@@ -72,3 +72,47 @@ func TestValidateSlideDirErrorsWhenDirectoryEmpty(t *testing.T) {
 		t.Fatal("expected an error for a directory with no supported files")
 	}
 }
+
+// A row carrying a structural category (default/logo/commercials/candid)
+// must stay in the catalog even when its slide directory is missing or
+// empty — state.Controller.New() derives CustomIDs by scanning the
+// catalog for these Category values, and if the row isn't there, that
+// category's id silently stays at the zero value, which collides with
+// Default's real id of 0. Candid in particular starts every show with no
+// directory at all, before anyone's uploaded a first photo.
+func TestLoadJSONKeepsStructuralCategoryRowsEvenWhenDirectoryMissing(t *testing.T) {
+	root := t.TempDir()
+	slideDir := filepath.Join(root, "media")
+	songsFile := filepath.Join(root, "songs.json")
+	writeFile(t, songsFile, `[{"id": 2, "title": "Candid", "slides": "candid", "category": "candid"}]`)
+	// Deliberately no media/candid directory created at all.
+
+	catalog, err := LoadJSON(songsFile, slideDir, false, 0)
+	if err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	if len(catalog) != 1 || catalog[0].Category != "candid" {
+		t.Fatalf("expected the candid row kept despite its missing directory, got %+v", catalog)
+	}
+	if catalog[0].HasImages {
+		t.Fatalf("expected HasImages=false for a directory with nothing in it, got %+v", catalog[0])
+	}
+}
+
+// Unlike a structural category row, a plain song with no Category and a
+// broken slide directory should still be dropped from the catalog unless
+// includeEmptySongs is set — the fix above must not weaken this.
+func TestLoadJSONDropsBrokenPlainSongWithoutIncludeEmptySongs(t *testing.T) {
+	root := t.TempDir()
+	slideDir := filepath.Join(root, "media")
+	songsFile := filepath.Join(root, "songs.json")
+	writeFile(t, songsFile, `[{"id": 1, "title": "Real Song", "slides": "real-song", "tempo": 120}]`)
+
+	catalog, err := LoadJSON(songsFile, slideDir, false, 0)
+	if err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	if len(catalog) != 0 {
+		t.Fatalf("expected a plain song with a broken slide dir to be dropped, got %+v", catalog)
+	}
+}

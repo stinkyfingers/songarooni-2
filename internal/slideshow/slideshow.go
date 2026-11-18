@@ -30,6 +30,7 @@ type Slideshow struct {
 	songMap         map[int]songs.Song
 	logoEvery       int
 	commercialEvery int
+	candidEvery     int
 	defaultLength   time.Duration
 	customIDs       state.CustomIDs
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
@@ -52,13 +53,14 @@ type Slideshow struct {
 // reaches the main server at the same hostname it reaches this one at,
 // just a different port, so only the port number needs to travel to the
 // page, not a full URL.
-func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commercialEvery int, defaultLength time.Duration, apiPort string) *Slideshow {
+func New(addr, parentDir string, songMap map[int]songs.Song, logoEvery, commercialEvery, candidEvery int, defaultLength time.Duration, apiPort string) *Slideshow {
 	return &Slideshow{
 		addr:            addr,
 		parentDir:       parentDir,
 		songMap:         songMap,
 		logoEvery:       logoEvery,
 		commercialEvery: commercialEvery,
+		candidEvery:     candidEvery,
 		defaultLength:   defaultLength,
 		apiPort:         apiPort,
 		stateChan:       make(chan string),

@@ -50,6 +50,8 @@ func main() {
 	}
 	log.Printf("loaded %d songs from %s", len(catalog), cfg.SongsFile)
 
+	cleanCandidDir(cfg.SlideDir, catalog)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -91,7 +93,7 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	// just whatever follows that one leading colon.
 	apiPort := strings.TrimPrefix(cfg.Addr, ":")
 
-	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, time.Duration(cfg.SlideIntervalSeconds)*time.Second, apiPort)
+	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, cfg.CandidFrequency, time.Duration(cfg.SlideIntervalSeconds)*time.Second, apiPort)
 	go func() {
 		if err := show.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("slideshow: Run exited: %v", err)
@@ -107,4 +109,22 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	}()
 
 	return show
+}
+
+// cleanCandidDir removes any existing files in the candid slide directory.
+func cleanCandidDir(slideDir string, catalog []songs.Song) {
+	var dir string
+	for _, c := range catalog {
+		if c.Category == "candid" {
+			dir = c.Slides
+			break
+		}
+	}
+	candidDir := fmt.Sprintf("%s/%s", slideDir, dir)
+	if err := os.RemoveAll(candidDir); err != nil {
+		log.Printf("cleaning candid dir %s: %v", candidDir, err)
+	}
+	if err := os.MkdirAll(candidDir, 0755); err != nil {
+		log.Printf("creating candid dir %s: %v", candidDir, err)
+	}
 }

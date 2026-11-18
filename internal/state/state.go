@@ -72,6 +72,7 @@ type CustomIDs struct {
 	DefaultID    int
 	LogoID       int
 	CommercialID int
+	CandidID     int
 }
 
 // New builds a Controller over catalog, driving clicker and display. A
@@ -95,6 +96,8 @@ func New(catalog []songs.Song, clicker click.Clicker, display Display) *Controll
 			customIds.LogoID = s.ID
 		case "commercials":
 			customIds.CommercialID = s.ID
+		case "candid":
+			customIds.CandidID = s.ID
 		}
 	}
 	display.SetCustomIDs(customIds)

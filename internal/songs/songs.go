@@ -58,7 +58,16 @@ func LoadJSON(filename, slideDir string, includeEmptySongs bool, defaultLength t
 			// there.
 			log.Printf("slide validation: %s: %s", song.Title, err)
 
-			if includeEmptySongs {
+			// A row carrying one of the structural categories (default,
+			// logo, commercials, candid) must stay in the catalog
+			// regardless of whether its directory currently has anything
+			// in it — Controller.New() needs it present to derive
+			// CustomIDs correctly, or that category's id silently stays
+			// at the zero value and collides with Default's real id 0.
+			// Candid in particular starts every show with an empty or
+			// not-yet-created directory, before anyone's uploaded a
+			// first photo.
+			if includeEmptySongs || song.Category != "" {
 				songs[i].HasImages = false
 				filteredSongs = append(filteredSongs, songs[i])
 			}
