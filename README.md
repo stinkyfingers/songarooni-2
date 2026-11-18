@@ -183,6 +183,8 @@ A couple of things worth knowing going in:
    ```
    Then right-click the new desktop icon and choose "Trust this launcher" (or similar — exact wording varies by Raspberry Pi OS version) the first time; after that, double-clicking just runs it directly. `Terminal=false` in the launcher is deliberate — `start.sh` already detects a non-terminal stdout and relaunches itself inside one on its own, so the launcher doesn't need to wrap it in one too.
 
+   **On a Pi4 running Raspberry Pi OS (Debian 13 "trixie") with `pcmanfm-pi`**: there's no "Trust this launcher" option at all — right-click only offers Permissions/Info/Details tabs, and double-clicking keeps showing an Execute/Execute in Terminal/Open prompt every single time, no matter what's set on the icon itself (`chmod +x` and per-file trust metadata like `gio set ... metadata::trusted true` don't do anything here — those are GNOME/Nautilus mechanisms, not PCManFM's). The actual fix is a global PCManFM preference, not a per-icon one: open an actual file browser window (not just the desktop — e.g. Menu → Accessories → File Manager), then **Edit → Preferences → General** → check **"Don't ask options on launch executable file"**. That governs both desktop icons and file-browser windows, so it only needs doing once per Pi. Pick **"Execute"** (not "Execute in Terminal") if you ever do have to answer the prompt manually — `Terminal=false` above is why.
+
 ## One-time Pi setup: GPU memory for smooth video
 
 The default GPU memory split (as little as 76M on some Raspberry Pi OS images) isn't enough for a video-heavy slideshow — Chromium will report `memory_throttled` on `chrome://gpu` and fall back to slower rendering paths, showing up as jerky video/transitions and occasional blank-white flashes.
