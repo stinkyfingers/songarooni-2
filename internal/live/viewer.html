@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Songarooni — Viewer</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; text-align: center; padding: 2rem; background: #111; color: #eee; }
+    video { width: 100%; max-width: 480px; background: #000; border-radius: 8px; }
+    #status { margin-top: 1rem; color: #aaa; min-height: 1.5em; }
+  </style>
+</head>
+<body>
+  <h1>Viewer</h1>
+  <video id="remote" autoplay playsinline muted></video>
+  <p id="status">Connecting…</p>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const remote = document.getElementById('remote');
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+      console.log('[viewer]', msg);
+    }
+
+    const ws = new WebSocket(`wss://${location.host}/signal?role=viewer`);
+    // See camera.html's comment — same reasoning for including a STUN
+    // server here too.
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+
+    pc.ontrack = (event) => {
+      remote.srcObject = event.streams[0];
+      setStatus('Receiving track.');
+      // autoplay + muted should already be enough, but call play()
+      // explicitly too — belt and suspenders against any browser's
+      // autoplay heuristics still declining to start playback on their
+      // own once srcObject is assigned after the element was already in
+      // the DOM.
+      remote.play().catch((err) => console.error('remote.play() failed:', err));
+    };
+    pc.onicecandidate = (e) => {
+      if (e.candidate) ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate }));
+    };
+    pc.onconnectionstatechange = () => setStatus('Peer connection: ' + pc.connectionState);
+
+    ws.addEventListener('open', () => setStatus('Signaling connected — waiting for a camera…'));
+
+    // ICE candidates from the camera can arrive over the signaling
+    // socket while setRemoteDescription(offer) below is still pending
+    // (it's genuinely async) — calling addIceCandidate before that
+    // finishes is rejected by some browsers (seen: works on Chrome,
+    // silently stalls forever on Firefox, stuck at "negotiating…").
+    // Queue anything that arrives too early and flush it once the offer
+    // is in.
+    let remoteDescSet = false;
+    let pendingCandidates = [];
+
+    async function addCandidate(candidate) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        console.error('addIceCandidate failed:', err);
+      }
+    }
+
+    ws.addEventListener('message', async (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'offer') {
+        await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+        remoteDescSet = true;
+        for (const candidate of pendingCandidates) await addCandidate(candidate);
+        pendingCandidates = [];
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+        setStatus('Answered offer — negotiating…');
+      } else if (msg.type === 'ice' && msg.candidate) {
+        if (remoteDescSet) {
+          await addCandidate(msg.candidate);
+        } else {
+          pendingCandidates.push(msg.candidate);
+        }
+      }
+    });
+
+    ws.addEventListener('close', () => setStatus('Signaling connection closed.'));
+    ws.addEventListener('error', () => setStatus('Signaling connection error — check the console.'));
+  </script>
+</body>
+</html>

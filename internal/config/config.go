@@ -46,6 +46,12 @@ type Config struct {
 	// default) to auto-detect a Chromium-family browser on PATH instead —
 	// see internal/slideshow.
 	BrowserCommand []string `yaml:"browser_command" json:"browser_command"`
+
+	// LiveAddr is the WebRTC signaling server's own HTTPS listen address
+	// (see internal/live) — HTTPS because iOS Safari's getUserMedia
+	// refuses to run outside a secure context. Separate port, same
+	// reasoning as BrowserSlideshowAddr being separate from Addr.
+	LiveAddr string `yaml:"live_addr" json:"live_addr"`
 }
 
 func defaults() Config {
@@ -63,6 +69,7 @@ func defaults() Config {
 		LogFile:              "songarooni.log",
 		PedalDeviceName:      "FootCtrlPlus Keyboard",
 		BrowserSlideshowAddr: ":8888",
+		LiveAddr:             ":8443",
 	}
 }
 

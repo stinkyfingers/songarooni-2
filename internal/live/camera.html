@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Songarooni — Camera</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; text-align: center; padding: 2rem; background: #111; color: #eee; }
+    video { width: 100%; max-width: 480px; background: #000; border-radius: 8px; }
+    button { font-size: 1.25rem; padding: 0.75rem 1.5rem; margin-top: 1rem; }
+    #status { margin-top: 1rem; color: #aaa; min-height: 1.5em; }
+  </style>
+</head>
+<body>
+  <h1>Camera</h1>
+  <video id="preview" autoplay playsinline muted></video>
+  <p><button id="start-btn">Start Broadcasting</button></p>
+  <p id="status"></p>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    const startBtn = document.getElementById('start-btn');
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+      console.log('[camera]', msg);
+    }
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        });
+        preview.srcObject = stream;
+
+        const ws = new WebSocket(`wss://${location.host}/signal?role=camera`);
+        // A STUN server costs nothing to include and only ever adds
+        // candidates, never removes connectivity options — worth having
+        // even though the real show venue's network (see
+        // plans/web-rtc.md) is expected to have no internet access at
+        // all, since this is cheap insurance for whatever network this
+        // actually runs on.
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        });
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate) ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate }));
+        };
+        pc.onconnectionstatechange = () => setStatus('Peer connection: ' + pc.connectionState);
+
+        // ICE candidates from the viewer can arrive over the signaling
+        // socket while setRemoteDescription(answer) below is still
+        // pending (it's genuinely async) — calling addIceCandidate
+        // before that finishes is rejected by some browsers (seen: works
+        // on Chrome, silently stalls forever on Firefox). Queue anything
+        // that arrives too early and flush it once the answer is in.
+        let remoteDescSet = false;
+        let pendingCandidates = [];
+
+        async function addCandidate(candidate) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (err) {
+            console.error('addIceCandidate failed:', err);
+          }
+        }
+
+        ws.addEventListener('open', async () => {
+          setStatus('Signaling connected — creating offer…');
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+        });
+
+        ws.addEventListener('message', async (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'answer') {
+            await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+            remoteDescSet = true;
+            for (const candidate of pendingCandidates) await addCandidate(candidate);
+            pendingCandidates = [];
+          } else if (msg.type === 'ice' && msg.candidate) {
+            if (remoteDescSet) {
+              await addCandidate(msg.candidate);
+            } else {
+              pendingCandidates.push(msg.candidate);
+            }
+          }
+        });
+
+        ws.addEventListener('close', () => setStatus('Signaling connection closed.'));
+        ws.addEventListener('error', () => setStatus('Signaling connection error — check the console.'));
+      } catch (err) {
+        setStatus('Error: ' + err.message);
+        startBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

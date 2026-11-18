@@ -19,6 +19,7 @@ import (
 
 	"songarooni/internal/click"
 	"songarooni/internal/config"
+	"songarooni/internal/live"
 	"songarooni/internal/pedal"
 	"songarooni/internal/slideshow"
 	"songarooni/internal/songs"
@@ -56,6 +57,7 @@ func main() {
 	defer cancel()
 
 	display := buildDisplay(ctx, cfg, catalog)
+	buildLive(ctx, cfg)
 	var clicker click.Clicker
 	clicker = &click.NoopClicker{} // default to a no-op clicker if no supported audio player is found on PATH
 	if !cfg.NoClick {
@@ -109,6 +111,24 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	}()
 
 	return show
+}
+
+// buildLive starts the WebRTC signaling server (Phase 1 of
+// plans/web-rtc.md) — standalone for now, not wired into the real
+// display yet. A failure here is non-fatal: Phase 1 is independent of
+// the slideshow/click/pedal path, so a broken cert or a busy port
+// shouldn't take down the rest of the app.
+func buildLive(ctx context.Context, cfg config.Config) {
+	liveServer, err := live.New(cfg.LiveAddr)
+	if err != nil {
+		log.Printf("live: %v", err)
+		return
+	}
+	go func() {
+		if err := liveServer.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("live: Run exited: %v", err)
+		}
+	}()
 }
 
 // cleanCandidDir removes any existing files in the candid slide directory.
