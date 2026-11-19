@@ -37,12 +37,14 @@ h1 {
 
 #search-row {
   display: flex;
+  flex-wrap: wrap; /* wrap to a second row on narrow screens instead of squeezing #search illegibly thin — same tradeoff as #controls below */
   gap: 0.5rem;
   margin: 0.5rem 0 1rem;
 }
 
 #search {
-  flex: 1;
+  flex: 2;
+  min-width: 0; /* flex items default to min-width: auto (content's own intrinsic minimum) — without this, the input refuses to shrink past that regardless of flex-shrink/basis */
   padding: 0.75rem;
   font-size: 1rem;
   border-radius: 8px;
@@ -58,6 +60,9 @@ h1 {
   border: 1px solid #333;
   background: #1c1c1c;
   color: #eee;
+  flex: 1;
+  min-width: 0; /* same default-min-width-auto issue as #search above */
+  max-width: 85px;
 }
 
 #song-list-wrap {
@@ -165,7 +170,7 @@ h1 {
   gap: 0.3rem;
 }
 
-#controls button {
+#controls button, #search-row button {
   flex: 1 1 4rem; /* prefer ~8rem each; wraps once that no longer fits rather than squeezing narrower */
   min-width: 0; /* let a button shrink below its text's natural width in the rare case wrap alone isn't enough */
   padding: 1rem 0.4rem;
@@ -188,6 +193,10 @@ h1 {
 #logo-btn.active { background: #3498db; }
 #default-btn { background: #555; }
 #default-btn.active { background: #930096; }
+#candid-btn { background: #555; }
+#search-row #candid-btn {
+  max-width: 50px;
+} /* must out-specificity "#search-row button"'s min-width: 0 above, or this silently loses */
 
 #start-btn:disabled, #stop-btn:disabled {
   opacity: 0.4;

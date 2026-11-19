@@ -2,6 +2,10 @@ package slideshow
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +70,52 @@ func TestLaunchKioskGivesUpAfterRepeatedFastExits(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "giving up") {
 		t.Fatalf("expected a 'giving up' error explaining why, got: %v", err)
+	}
+}
+
+// The actual deferred bug this guards against: exec.CommandContext's
+// default Cancel behavior is an immediate SIGKILL, which gives Chromium
+// zero chance to signal its own child processes to exit before dying —
+// they're orphaned. LaunchKiosk's Cancel override must send SIGTERM
+// instead, letting a well-behaved process clean up on its own. A SIGKILL
+// would bypass this trap entirely (no handler runs), so the trap firing
+// and writing to outFile is direct proof SIGTERM was actually what got
+// sent, not just that the process eventually died somehow.
+func TestLaunchKioskSendsSIGTERMNotSIGKILLOnShutdown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this test's trap-based shell script assumes a POSIX shell")
+	}
+
+	outFile := filepath.Join(t.TempDir(), "out.txt")
+	// A single long sleep (e.g. "sleep 10") doesn't work here: bash (macOS's
+	// /bin/sh) defers running a trap until whatever foreground child it's
+	// currently blocked on finishes, so the whole 10s would elapse before
+	// the trap ever fires. Looping over short sleeps bounds that deferral
+	// window to ~1s worst case instead, comfortably within this test's
+	// budget, while still giving cancel() something to interrupt mid-run.
+	script := fmt.Sprintf(`trap 'echo got-sigterm >> %s; exit 0' TERM; i=0; while [ $i -lt 10 ]; do sleep 1; i=$((i+1)); done`, outFile)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- LaunchKiosk(ctx, "unused", []string{"/bin/sh", "-c", script}, false)
+	}()
+
+	time.Sleep(200 * time.Millisecond) // give the child time to actually start and install its trap
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != ctx.Err() {
+			t.Fatalf("expected LaunchKiosk to return ctx.Err(), got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("LaunchKiosk did not return promptly after ctx was canceled — the SIGTERM handler may be hanging, or escalation to SIGKILL isn't happening")
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil || !strings.Contains(string(data), "got-sigterm") {
+		t.Fatalf("expected the child to have received SIGTERM and run its trap; outFile contents: %q (read err: %v)", data, err)
 	}
 }
 

@@ -9,8 +9,19 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
+
+// kioskShutdownGrace is how long Chromium gets to exit on its own after
+// SIGTERM before LaunchKiosk escalates to SIGKILL. exec.CommandContext's
+// default Cancel behavior is an immediate SIGKILL with no grace period at
+// all — fine for the browser process itself, but it gives Chromium zero
+// chance to signal its own zygote/GPU/renderer/utility children to exit
+// first, so they're orphaned (reparented to init) and keep running
+// indefinitely. Confirmed live on the Pi: a clean shutdown left a full
+// Chromium process tree running with nothing supervising it.
+const kioskShutdownGrace = 5 * time.Second
 
 // minHealthyUptime is how long a launched browser process has to stay up
 // before an exit counts as "it ran, then crashed" rather than "it never
@@ -54,6 +65,10 @@ func LaunchKiosk(ctx context.Context, url string, override []string, noKiosk boo
 	for {
 		start := time.Now()
 		execCmd := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+		execCmd.Cancel = func() error {
+			return execCmd.Process.Signal(syscall.SIGTERM)
+		}
+		execCmd.WaitDelay = kioskShutdownGrace
 		runErr := execCmd.Run()
 		if ctx.Err() != nil {
 			return ctx.Err()
