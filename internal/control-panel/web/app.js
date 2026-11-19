@@ -8,7 +8,7 @@ let lastScrolledSelectedId = null; // only auto-scroll when the selection actual
 let state = {
   hasSelection: false, selectedSongId: 0, selectedTitle: '', selectedTempo: 0,
   playingSongId: 0, playingTitle: '', playingTempo: 0,
-  running: false, muted: false, logoActive: false,
+  running: false, muted: false, logoActive: false, liveActive: false,
 };
 let configuration = {};
 
@@ -26,9 +26,14 @@ const el = {
   stopBtn: document.getElementById('stop-btn'),
   muteBtn: document.getElementById('mute-btn'),
   logoBtn: document.getElementById('logo-btn'),
+  liveBtn: document.getElementById('live-btn'),
   defaultBtn: document.getElementById('default-btn'),
   candidBtn: document.getElementById('candid-btn'),
   candidInput: document.getElementById('candid-input'),
+  cameraIpInput: document.getElementById('camera-ip-input'),
+  cameraPortInput: document.getElementById('camera-port-input'),
+  cameraSaveBtn: document.getElementById('camera-save-btn'),
+  cameraFindBtn: document.getElementById('camera-find-btn'),
   error: document.getElementById('error'),
 };
 
@@ -149,6 +154,7 @@ function renderState() {
 
   el.muteBtn.classList.toggle('active', state.muted);
   el.logoBtn.classList.toggle('active', state.logoActive);
+  el.liveBtn.classList.toggle('active', state.liveActive);
   el.startBtn.disabled = !state.hasSelection || (state.running && state.selectedSongId === state.playingSongId);
   el.stopBtn.disabled = !state.running;
   el.defaultBtn.classList.toggle('active', state.hasSelection && state.selectedSongId === DEFAULT_SONG_ID);
@@ -238,6 +244,45 @@ el.logoBtn.addEventListener('click', async () => {
   try {
     state = await api('POST', '/api/logo');
     renderState();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+el.liveBtn.addEventListener('click', async () => {
+  try {
+    state = await api('POST', '/api/live');
+    renderState();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+el.cameraSaveBtn.addEventListener('click', async () => {
+  const ip = el.cameraIpInput.value.trim();
+  const port = parseInt(el.cameraPortInput.value, 10);
+  if (!port || port <= 0) {
+    showError('Enter a port greater than 0');
+    return;
+  }
+  try {
+    await api('POST', '/api/camera-config', { ip, port });
+    showError('');
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+el.cameraFindBtn.addEventListener('click', async () => {
+  showError('Scanning the network for the camera…');
+  try {
+    const { found } = await api('POST', '/api/camera/discover');
+    if (found.length === 0) {
+      showError('No camera found on the local network');
+    } else {
+      el.cameraIpInput.value = found[0];
+      showError(found.length > 1 ? `Found ${found.length} cameras — using ${found[0]}` : '');
+    }
   } catch (err) {
     showError(err.message);
   }
@@ -365,15 +410,19 @@ document.addEventListener('keydown', (e) => {
 
 (async function init() {
   try {
-    [songs, state, configuration] = await Promise.all([
+    let cameraConfig;
+    [songs, state, configuration, cameraConfig] = await Promise.all([
       api('GET', '/api/songs'),
       api('GET', '/api/state'),
-      api('GET', '/api/config')
+      api('GET', '/api/config'),
+      api('GET', '/api/camera-config'),
     ]);
     populateSortOptions();
     renderList();
     renderState();
     adjustConfigurationUI(configuration);
+    el.cameraIpInput.value = cameraConfig.ip || '';
+    el.cameraPortInput.value = cameraConfig.port || '';
     // Some iOS/WebKit builds don't reliably deliver hardware-keyboard
     // keydown events to the page at all unless *something* is focused —
     // desktop browsers fire the document-level listener below regardless.

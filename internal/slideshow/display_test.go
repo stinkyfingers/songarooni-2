@@ -1,6 +1,7 @@
 package slideshow
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,6 +77,73 @@ func TestShowCancelsPreviousCycle(t *testing.T) {
 	want := "/images/" + filepath.Join("song-two", "x.png")
 	if got := recvOrTimeout(t, s.stateChan); got != want {
 		t.Fatalf("expected the new deck's slide %q, got %q", want, got)
+	}
+}
+
+type fakeCameraProxy struct {
+	configured bool
+	streamBody string
+}
+
+func (f fakeCameraProxy) StreamMJPEG(w http.ResponseWriter, r *http.Request) {
+	_, _ = w.Write([]byte(f.streamBody))
+}
+func (f fakeCameraProxy) Configured() bool { return f.configured }
+
+func TestShowLiveFailsWithNoCameraProxySet(t *testing.T) {
+	s := New(":0", t.TempDir(), nil, 0, 0, 0, time.Second, "8080")
+	if err := s.ShowLive(); err == nil {
+		t.Fatal("expected an error with no camera proxy ever set")
+	}
+}
+
+func TestShowLiveFailsWhenCameraNotConfigured(t *testing.T) {
+	s := New(":0", t.TempDir(), nil, 0, 0, 0, time.Second, "8080")
+	s.SetCameraProxy(fakeCameraProxy{configured: false})
+	if err := s.ShowLive(); err == nil {
+		t.Fatal("expected an error when the camera proxy reports not configured")
+	}
+}
+
+// ShowLive pushes the flat "live" sentinel directly to stateChan,
+// bypassing displayData/cycle entirely — app.js recognizes it and points
+// its <img> at /live-camera instead of rendering a slide.
+func TestShowLivePushesLiveSentinel(t *testing.T) {
+	s := New(":0", t.TempDir(), nil, 0, 0, 0, time.Second, "8080")
+	s.SetCameraProxy(fakeCameraProxy{configured: true})
+
+	if err := s.ShowLive(); err != nil {
+		t.Fatalf("ShowLive: %v", err)
+	}
+	if got := recvOrTimeout(t, s.stateChan); got != "live" {
+		t.Fatalf("expected %q, got %q", "live", got)
+	}
+}
+
+// ShowLive must cancel whatever deck was previously cycling — otherwise a
+// song's slides would keep pushing to stateChan alongside the live feed.
+func TestShowLiveCancelsPreviousCycle(t *testing.T) {
+	parentDir := t.TempDir()
+	writeSlideFile(t, parentDir, "song-one", "a.png")
+	songMap := map[int]songs.Song{1: {ID: 1, Slides: "song-one"}}
+	s := New(":0", parentDir, songMap, 0, 0, 0, time.Duration(50)*time.Millisecond, "8080")
+	s.SetCameraProxy(fakeCameraProxy{configured: true})
+
+	s.Show(1)
+	recvOrTimeout(t, s.stateChan) // consume song 1's first push
+
+	if err := s.ShowLive(); err != nil {
+		t.Fatalf("ShowLive: %v", err)
+	}
+	if got := recvOrTimeout(t, s.stateChan); got != "live" {
+		t.Fatalf("expected the live sentinel, got %q", got)
+	}
+
+	// Nothing from song 1's cycle should arrive afterward — it was canceled.
+	select {
+	case got := <-s.stateChan:
+		t.Fatalf("expected song 1's cycle to have been canceled, but got %q", got)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 

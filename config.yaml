@@ -14,3 +14,6 @@ click_volume: 1.0
 click_frequency: 1800
 no_kiosk: true
 no_click: true
+camera_username: "admin"
+camera_password: "admin123"
+camera_port: 8999

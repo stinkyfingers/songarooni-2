@@ -30,6 +30,33 @@ func TestHandleImagesServesFromParentDir(t *testing.T) {
 	}
 }
 
+func TestHandleLiveCameraFailsWithNoProxySet(t *testing.T) {
+	s := New(":0", t.TempDir(), nil, 0, 0, 0, 0, "8080")
+	req := httptest.NewRequest("GET", "/live-camera", nil)
+	w := httptest.NewRecorder()
+	s.handleLiveCamera(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestHandleLiveCameraDelegatesToTheConfiguredProxy(t *testing.T) {
+	s := New(":0", t.TempDir(), nil, 0, 0, 0, 0, "8080")
+	s.SetCameraProxy(fakeCameraProxy{configured: true, streamBody: "fake mjpeg bytes"})
+
+	req := httptest.NewRequest("GET", "/live-camera", nil)
+	w := httptest.NewRecorder()
+	s.handleLiveCamera(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "fake mjpeg bytes" {
+		t.Fatalf("expected the proxy's body to pass through, got %q", w.Body.String())
+	}
+}
+
 func TestEmbeddedIndexPageServes(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(webAssets))

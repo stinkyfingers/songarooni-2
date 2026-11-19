@@ -3,6 +3,7 @@ package control_panel
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"songarooni/internal/camera"
 	"songarooni/internal/config"
 	"songarooni/internal/songs"
 	"songarooni/internal/state"
@@ -20,19 +22,28 @@ type fakeClicker struct{}
 func (fakeClicker) Start(tempo int) error { return nil }
 func (fakeClicker) Stop() error           { return nil }
 
-type fakeDisplay struct{}
+type fakeDisplay struct {
+	liveErr error
+}
 
-func (fakeDisplay) Show(id int)                    {}
+func (fakeDisplay) Show(id int)                      {}
 func (fakeDisplay) SetCustomIDs(ids state.CustomIDs) {}
+func (f fakeDisplay) ShowLive() error                { return f.liveErr }
 
 func testHandler() http.Handler {
 	return testHandlerWithConfig(config.Config{})
 }
 
 func testHandlerWithConfig(cfg config.Config) http.Handler {
+	h, _ := testHandlerWithCamera(cfg)
+	return h
+}
+
+func testHandlerWithCamera(cfg config.Config) (http.Handler, *camera.Proxy) {
 	catalog := []songs.Song{{ID: 1, Title: "Song One", Slides: "song-one", Tempo: 120}}
 	controller := state.New(catalog, fakeClicker{}, fakeDisplay{})
-	return apiHandler(controller, cfg)
+	cameraProxy := camera.New(cfg.CameraIP, cfg.CameraPort, cfg.CameraUsername, cfg.CameraPassword)
+	return apiHandler(controller, cfg, cameraProxy), cameraProxy
 }
 
 // pngSignature is enough for http.DetectContentType to recognize
@@ -59,6 +70,114 @@ func multipartRequest(t *testing.T, field string, files map[string][]byte) *http
 	req := httptest.NewRequest("POST", "/api/candid/upload", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	return req
+}
+
+func TestAPILiveSucceeds(t *testing.T) {
+	h := testHandler()
+
+	req := httptest.NewRequest("POST", "/api/live", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got state.State
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if !got.LiveActive {
+		t.Fatal("expected liveActive=true in the response")
+	}
+}
+
+func TestAPILiveFailsWhenNoCameraConfigured(t *testing.T) {
+	catalog := []songs.Song{{ID: 1, Title: "Song One", Slides: "song-one", Tempo: 120}}
+	controller := state.New(catalog, fakeClicker{}, fakeDisplay{liveErr: errors.New("no camera configured")})
+	cameraProxy := camera.New("", 0, "", "")
+	h := apiHandler(controller, config.Config{}, cameraProxy)
+
+	req := httptest.NewRequest("POST", "/api/live", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAPICameraConfigGetReturnsCurrentTarget(t *testing.T) {
+	h, _ := testHandlerWithCamera(config.Config{CameraIP: "192.168.1.42", CameraPort: 8080})
+
+	req := httptest.NewRequest("GET", "/api/camera-config", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		IP   string `json:"ip"`
+		Port int    `json:"port"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.IP != "192.168.1.42" || got.Port != 8080 {
+		t.Fatalf("expected the configured target, got %+v", got)
+	}
+}
+
+func TestAPICameraConfigPostUpdatesTheRunningProxy(t *testing.T) {
+	h, cameraProxy := testHandlerWithCamera(config.Config{})
+
+	body, _ := json.Marshal(map[string]any{"ip": "192.168.1.99", "port": 9090})
+	req := httptest.NewRequest("POST", "/api/camera-config", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	ip, port := cameraProxy.Target()
+	if ip != "192.168.1.99" || port != 9090 {
+		t.Fatalf("expected the proxy's target to be updated, got %s:%d", ip, port)
+	}
+}
+
+func TestAPICameraConfigPostRejectsInvalidPort(t *testing.T) {
+	h, _ := testHandlerWithCamera(config.Config{})
+
+	body, _ := json.Marshal(map[string]any{"ip": "192.168.1.99", "port": 0})
+	req := httptest.NewRequest("POST", "/api/camera-config", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for a non-positive port with a non-empty IP, got %d", w.Code)
+	}
+}
+
+func TestAPICameraDiscoverReturnsFoundHosts(t *testing.T) {
+	h, _ := testHandlerWithCamera(config.Config{CameraPort: 8080})
+
+	req := httptest.NewRequest("POST", "/api/camera/discover", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	// No real camera on this machine's LAN during a test run — just
+	// confirming the endpoint responds with a (possibly empty) found list
+	// rather than erroring, since Discover's actual scanning is already
+	// covered directly in internal/camera's own tests.
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Found []string `json:"found"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
 }
 
 // The slideshow kiosk page polls these two endpoints cross-origin (it runs

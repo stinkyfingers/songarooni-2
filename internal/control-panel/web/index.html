@@ -16,6 +16,7 @@
     <button id="stop-btn">Stop</button>
     <button id="mute-btn">Mute</button>
     <button id="logo-btn">Logo</button>
+    <button id="live-btn">🔴 Go Live</button>
     <button id="default-btn">Generic</button>
     <input type="file" id="candid-input" accept="image/*" multiple hidden>
   </div>
@@ -30,6 +31,14 @@
     <label for="tempo-input">Manual tempo</label>
     <input id="tempo-input" type="number" min="1" max="300" inputmode="numeric">
     <button id="tempo-set-btn">Set</button>
+  </div>
+
+  <div id="camera-config">
+    <label for="camera-ip-input">Camera</label>
+    <input id="camera-ip-input" type="text" placeholder="IP address" autocomplete="off">
+    <input id="camera-port-input" type="number" min="1" max="65535" placeholder="Port">
+    <button id="camera-save-btn">Save</button>
+    <button id="camera-find-btn">Find Camera</button>
   </div>
 
   <div id="now-playing">

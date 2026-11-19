@@ -20,6 +20,7 @@ import (
 type Display interface {
 	Show(id int)
 	SetCustomIDs(ids CustomIDs)
+	ShowLive() error
 }
 
 // State is a snapshot of current playback state, safe to copy and return
@@ -47,6 +48,7 @@ type State struct {
 	Running    bool   `json:"running"` // PlayingSongID != 0
 	Muted      bool   `json:"muted"`
 	LogoActive bool   `json:"logoActive"`
+	LiveActive bool   `json:"liveActive"`
 	Error      string `json:"error,omitempty"`
 }
 
@@ -62,6 +64,7 @@ type Controller struct {
 	playing    *songs.Song
 	muted      bool
 	logoActive bool
+	liveActive bool
 	lastErr    string
 
 	clicker click.Clicker
@@ -234,6 +237,7 @@ func (c *Controller) Start() error {
 	c.display.Show(c.selected.ID)
 	c.playing = c.selected
 	c.logoActive = false // starting a song already moves the display off the logo; keep the flag truthful
+	c.liveActive = false // ditto for live
 	c.lastErr = ""
 	return nil
 }
@@ -338,7 +342,27 @@ func (c *Controller) ToggleLogo() error {
 		return nil
 	}
 	c.logoActive = true
+	c.liveActive = false
 	c.display.Show(c.customIDs.LogoID)
+	return nil
+}
+
+// GoLive pushes the configured camera's feed onto the display, replacing
+// whatever slideshow is currently cycling. It stays up until a different
+// song, the logo, or another GoLive call is explicitly triggered — there
+// is no dwell timer and nothing to remember or restore. Fails if no
+// camera has ever been configured (see internal/camera).
+func (c *Controller) GoLive() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := c.display.ShowLive(); err != nil {
+		c.lastErr = err.Error()
+		return err
+	}
+	c.liveActive = true
+	c.logoActive = false
+	c.lastErr = ""
 	return nil
 }
 
@@ -347,7 +371,7 @@ func (c *Controller) GetState() State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	s := State{Muted: c.muted, LogoActive: c.logoActive, Error: c.lastErr}
+	s := State{Muted: c.muted, LogoActive: c.logoActive, LiveActive: c.liveActive, Error: c.lastErr}
 	if c.selected != nil {
 		s.HasSelection = true
 		s.SelectedSongID = c.selected.ID

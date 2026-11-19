@@ -46,6 +46,21 @@ type Config struct {
 	// default) to auto-detect a Chromium-family browser on PATH instead —
 	// see internal/slideshow.
 	BrowserCommand []string `yaml:"browser_command" json:"browser_command"`
+
+	// CameraUsername/CameraPassword are the Basic Auth credentials set in
+	// the phone's IP-camera app (e.g. GuardianEye) — see plans/http-video.md.
+	// json:"-" is load-bearing, not decorative: GET /api/config serializes
+	// this whole struct verbatim to any browser that asks, and a camera
+	// password must never go out over that endpoint.
+	CameraUsername string `yaml:"camera_username" json:"-"`
+	CameraPassword string `yaml:"camera_password" json:"-"`
+
+	// CameraIP/CameraPort are the camera's default/fallback address —
+	// runtime-adjustable from the control panel (see internal/camera),
+	// since the actual phone's address is the one thing in this group
+	// that's expected to change night to night.
+	CameraIP   string `yaml:"camera_ip" json:"camera_ip,omitempty"`
+	CameraPort int    `yaml:"camera_port" json:"camera_port,omitempty"`
 }
 
 func defaults() Config {
@@ -63,6 +78,7 @@ func defaults() Config {
 		LogFile:              "songarooni.log",
 		PedalDeviceName:      "FootCtrlPlus Keyboard",
 		BrowserSlideshowAddr: ":8888",
+		CameraPort:           8080, // GuardianEye's own default
 	}
 }
 

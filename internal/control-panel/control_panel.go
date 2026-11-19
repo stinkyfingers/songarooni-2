@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"songarooni/internal/camera"
 	"songarooni/internal/config"
 	"songarooni/internal/state"
 )
@@ -39,10 +40,11 @@ func mustSub(f embed.FS, dir string) fs.FS {
 }
 
 // Run builds the control panel's mux (the JSON API plus the embedded phone
-// page) and serves it on addr until ctx is done.
-func Run(ctx context.Context, controller *state.Controller, configuration config.Config) error {
+// page) and serves it on addr until ctx is done. cameraProxy backs
+// /api/camera-config and /api/camera/discover — see plans/http-video.md.
+func Run(ctx context.Context, controller *state.Controller, configuration config.Config, cameraProxy *camera.Proxy) error {
 	mux := http.NewServeMux()
-	mux.Handle("/api/", apiHandler(controller, configuration))
+	mux.Handle("/api/", apiHandler(controller, configuration, cameraProxy))
 	mux.Handle("/", noCache(http.FileServerFS(webAssets)))
 
 	server := &http.Server{Addr: configuration.Addr, Handler: mux}
@@ -64,7 +66,7 @@ func Run(ctx context.Context, controller *state.Controller, configuration config
 	}
 }
 
-func apiHandler(controller *state.Controller, configuration config.Config) http.Handler {
+func apiHandler(controller *state.Controller, configuration config.Config, cameraProxy *camera.Proxy) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/songs", func(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +164,47 @@ func apiHandler(controller *state.Controller, configuration config.Config) http.
 			return
 		}
 		writeJSON(w, http.StatusOK, controller.GetState())
+	})
+
+	mux.HandleFunc("POST /api/live", func(w http.ResponseWriter, r *http.Request) {
+		if err := controller.GoLive(); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, controller.GetState())
+	})
+
+	mux.HandleFunc("GET /api/camera-config", func(w http.ResponseWriter, r *http.Request) {
+		ip, port := cameraProxy.Target()
+		writeJSON(w, http.StatusOK, map[string]any{"ip": ip, "port": port})
+	})
+
+	mux.HandleFunc("POST /api/camera-config", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			IP   string `json:"ip"`
+			Port int    `json:"port"`
+		}
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if err := cameraProxy.SetTarget(body.IP, body.Port); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ip": body.IP, "port": body.Port})
+	})
+
+	// POST, not GET: Discover scans the whole local /24 (network traffic,
+	// takes real time), so it shouldn't fire incidentally the way a GET
+	// might (a prefetch, a browser retry) — it's an explicit "Find Camera"
+	// button press, not a passive state read.
+	mux.HandleFunc("POST /api/camera/discover", func(w http.ResponseWriter, r *http.Request) {
+		found, err := cameraProxy.Discover(r.Context())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"found": found})
 	})
 
 	mux.HandleFunc("POST /api/candid/upload", func(w http.ResponseWriter, r *http.Request) {

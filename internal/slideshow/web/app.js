@@ -5,6 +5,71 @@
   var activeLayer = 0;
   var videoSuffixes = [".mp4"];
 
+  // Go Live (see plans/http-video.md): the server pushes the flat sentinel
+  // "live" over the same SSE channel instead of a slide URL, meaning
+  // "point your <img> at this server's own /live-camera route" — a Go
+  // proxy that authenticates to the phone's camera app server-side, so no
+  // credentials ever reach this page.
+  var LIVE_RETRY_MS = 3000; // how soon to retry after the <img> fires "error" (e.g. the camera was never reachable)
+  var LIVE_WATCHDOG_MS = 20000; // periodic reconnect regardless of error state — see teardownLive's comment on why onerror alone isn't enough
+  var liveWatchdog = null;
+
+  // Closes whatever live viewer is currently showing, if any — a no-op if
+  // Live was never started. Called whenever a normal slide arrives, so a
+  // stale reconnect timer never lingers once the server moves on to a
+  // song, the logo, or Default.
+  function teardownLive() {
+    if (liveWatchdog) {
+      clearInterval(liveWatchdog);
+      liveWatchdog = null;
+    }
+  }
+
+  // Swaps in an <img> pointed at /live-camera, using the same layer-swap
+  // showSlide/reveal use for a normal slide. Unlike a normal slide, there's
+  // no load event worth waiting for — the image just stays black until the
+  // proxy actually has a frame to send — and no dwell timer or
+  // notifyAdvance() call, since the server's ShowLive never goes through
+  // displayData at all (see its doc comment).
+  function startLiveViewer() {
+    if (layers[activeLayer].dataset && layers[activeLayer].dataset.live === "1") {
+      return; // already showing live; let its own retry/watchdog keep going
+    }
+
+    var nextLayer = 1 - activeLayer;
+    var oldEl = layers[nextLayer];
+    var imgEl = document.createElement("img");
+    imgEl.className = "slide";
+    imgEl.dataset.live = "1";
+
+    function reload() {
+      imgEl.src = "/live-camera?t=" + Date.now(); // cache-bust so this actually re-opens the stream, not a no-op same-URL reload
+    }
+    imgEl.onerror = function () {
+      console.error("live: camera stream error, retrying in " + LIVE_RETRY_MS + "ms");
+      setTimeout(reload, LIVE_RETRY_MS);
+    };
+    reload();
+
+    // A dropped connection mid-stream (the phone's WiFi, not the initial
+    // request) doesn't reliably fire an <img>'s error event for a
+    // multipart/x-mixed-replace stream — some browsers just freeze on the
+    // last frame forever. A periodic forced reconnect, independent of
+    // error state, is the real recovery path for that case.
+    teardownLive();
+    liveWatchdog = setInterval(reload, LIVE_WATCHDOG_MS);
+
+    if (layers[activeLayer].tagName === "VIDEO") {
+      layers[activeLayer].pause();
+    }
+    layers[activeLayer].classList.remove("visible");
+    imgEl.classList.add("visible");
+    activeLayer = nextLayer;
+
+    oldEl.parentNode.replaceChild(imgEl, oldEl);
+    layers[nextLayer] = imgEl;
+  }
+
   function isVideo(url) {
     return videoSuffixes.some(function (s) { return url.toLowerCase().endsWith(s); });
   }
@@ -36,6 +101,12 @@
   // decides what to show and when by pushing one URL per SSE message; this
   // just renders whatever arrives.
   function showSlide(url) {
+    if (url === "live") {
+      startLiveViewer();
+      return;
+    }
+    teardownLive(); // harmless no-op unless we were actually showing Live
+
     var nextLayer = 1 - activeLayer;
     var oldEl = layers[nextLayer];
     var newEl = makeLayerElement(url);

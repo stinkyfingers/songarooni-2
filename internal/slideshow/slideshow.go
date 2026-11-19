@@ -34,6 +34,7 @@ type Slideshow struct {
 	defaultLength   time.Duration
 	customIDs       state.CustomIDs
 	apiPort         string // the main server's port, for the page's cross-origin poll of /api/state
+	camera          CameraProxy
 	stateChan       chan string
 
 	// advanceChan carries one signal per POST /advance — the browser's way
@@ -73,6 +74,37 @@ func (s *Slideshow) SetCustomIDs(ids state.CustomIDs) {
 	s.customIDs = ids
 }
 
+// CameraProxy streams a live camera feed through to an HTTP response —
+// satisfied by *camera.Proxy (see plans/http-video.md). A small interface
+// here, rather than an internal/camera import, keeps this package's only
+// dependency on that one a setter call made from main.go, same shape as
+// SetCustomIDs.
+type CameraProxy interface {
+	StreamMJPEG(w http.ResponseWriter, r *http.Request)
+	Configured() bool
+}
+
+// SetCameraProxy wires in the live camera feed that ShowLive and
+// /live-camera use. Left unset, ShowLive just fails with "no camera
+// configured" and /live-camera 503s — safe to call either even if
+// internal/camera was never configured at all.
+func (s *Slideshow) SetCameraProxy(p CameraProxy) {
+	s.camera = p
+}
+
+// handleLiveCamera proxies the configured camera's MJPEG stream straight
+// through — the kiosk page's live <img> points here (same origin as the
+// kiosk itself, so no cross-origin complication), never at the camera's
+// own address directly, so the camera's Basic Auth credentials never need
+// to reach the browser.
+func (s *Slideshow) handleLiveCamera(w http.ResponseWriter, r *http.Request) {
+	if s.camera == nil {
+		http.Error(w, "camera not configured", http.StatusServiceUnavailable)
+		return
+	}
+	s.camera.StreamMJPEG(w, r)
+}
+
 // Run serves the kiosk page and its assets until ctx is done.
 func (s *Slideshow) Run(ctx context.Context) error {
 	s.showMu.Lock()
@@ -82,6 +114,7 @@ func (s *Slideshow) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /bkgd.jpg", s.handleBkgd)
 	mux.HandleFunc("GET /images/", s.handleImages)
+	mux.HandleFunc("GET /live-camera", s.handleLiveCamera)
 	mux.HandleFunc("GET /events", s.sseHandler)
 	mux.HandleFunc("POST /advance", s.handleAdvance)
 	mux.Handle("GET /", http.FileServerFS(webAssets)) // index.html, app.js, styles.css

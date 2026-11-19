@@ -2,6 +2,7 @@ package slideshow
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/url"
 	"time"
@@ -51,6 +52,39 @@ func (s *Slideshow) Show(id int) {
 	s.showMu.Unlock()
 
 	go s.cycle(ctx, id, deck, commercials, logos, candid)
+}
+
+// ShowLive implements state.Display: it cancels whatever deck is currently
+// cycling (same as Show, but with nothing new to start in its place) and
+// pushes the flat "live" sentinel to every connected SSE client, which
+// app.js recognizes and points its own <img> at this server's
+// /live-camera route instead of rendering a normal slide. Unlike Show,
+// there's no new cycle goroutine and no dwell timer — Live stays up until
+// something else explicitly replaces it (a song, the logo, or another
+// ShowLive call). Fails only if no camera has ever been configured at
+// all (see SetCameraProxy) — deliberately not a live reachability check:
+// that would mean a network round-trip while Controller still holds its
+// lock (see GoLive), and a configured-but-unreachable camera is already
+// handled visibly on the kiosk side (the <img>'s error/retry path).
+func (s *Slideshow) ShowLive() error {
+	if s.camera == nil || !s.camera.Configured() {
+		return fmt.Errorf("no camera configured")
+	}
+
+	s.showMu.Lock()
+	if s.cancelShow != nil {
+		s.cancelShow()
+		s.cancelShow = nil
+	}
+	s.showMu.Unlock()
+
+	go func() {
+		select {
+		case s.stateChan <- "live":
+		case <-s.ctx.Done():
+		}
+	}()
+	return nil
 }
 
 // cycle pushes deck's slides to stateChan one at a time, holding each on

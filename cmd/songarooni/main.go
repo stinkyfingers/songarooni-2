@@ -17,6 +17,7 @@ import (
 
 	control_panel "songarooni/internal/control-panel"
 
+	"songarooni/internal/camera"
 	"songarooni/internal/click"
 	"songarooni/internal/config"
 	"songarooni/internal/pedal"
@@ -55,7 +56,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	display := buildDisplay(ctx, cfg, catalog)
+	cameraProxy := camera.New(cfg.CameraIP, cfg.CameraPort, cfg.CameraUsername, cfg.CameraPassword)
+	display := buildDisplay(ctx, cfg, catalog, cameraProxy)
 	var clicker click.Clicker
 	clicker = &click.NoopClicker{} // default to a no-op clicker if no supported audio player is found on PATH
 	if !cfg.NoClick {
@@ -64,7 +66,7 @@ func main() {
 	controller := state.New(catalog, clicker, display)
 
 	go func() {
-		if err := control_panel.Run(ctx, controller, cfg); err != nil && ctx.Err() == nil {
+		if err := control_panel.Run(ctx, controller, cfg, cameraProxy); err != nil && ctx.Err() == nil {
 			log.Fatalf("control panel failed: %v", err)
 		}
 	}()
@@ -81,8 +83,10 @@ func main() {
 }
 
 // buildDisplay starts the slideshow kiosk server and launches a kiosk
-// browser pointed at it.
-func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) state.Display {
+// browser pointed at it. cameraProxy is wired in directly so the kiosk
+// page's live <img> has something to proxy through to — see
+// slideshow.CameraProxy and plans/http-video.md.
+func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song, cameraProxy *camera.Proxy) state.Display {
 	songMap := make(map[int]songs.Song, len(catalog))
 	for _, s := range catalog {
 		songMap[s.ID] = s
@@ -94,6 +98,7 @@ func buildDisplay(ctx context.Context, cfg config.Config, catalog []songs.Song) 
 	apiPort := strings.TrimPrefix(cfg.Addr, ":")
 
 	show := slideshow.New(cfg.BrowserSlideshowAddr, cfg.SlideDir, songMap, cfg.LogoFrequency, cfg.CommercialFrequency, cfg.CandidFrequency, time.Duration(cfg.SlideIntervalSeconds)*time.Second, apiPort)
+	show.SetCameraProxy(cameraProxy)
 	go func() {
 		if err := show.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("slideshow: Run exited: %v", err)

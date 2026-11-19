@@ -31,7 +31,9 @@ func (f *fakeClicker) Stop() error {
 }
 
 type fakeDisplay struct {
-	shown []int
+	shown     []int
+	liveCalls int
+	liveErr   error
 }
 
 func (f *fakeDisplay) Show(id int) {
@@ -39,6 +41,11 @@ func (f *fakeDisplay) Show(id int) {
 }
 
 func (f *fakeDisplay) SetCustomIDs(ids CustomIDs) {}
+
+func (f *fakeDisplay) ShowLive() error {
+	f.liveCalls++
+	return f.liveErr
+}
 
 // testCatalog is two plain songs, already in the alphabetical order
 // songs.LoadJSON would produce (Honky Tonk Women, The Weight) — no
@@ -373,5 +380,70 @@ func TestStartClearsLogoActive(t *testing.T) {
 	}
 	if c.GetState().LogoActive {
 		t.Fatal("expected Start to clear LogoActive")
+	}
+}
+
+func TestGoLive(t *testing.T) {
+	display := &fakeDisplay{}
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, display)
+	_ = c.SelectSong(1)
+	_ = c.Start()
+	_ = c.ToggleLogo()
+
+	if err := c.GoLive(); err != nil {
+		t.Fatalf("GoLive: %v", err)
+	}
+	if display.liveCalls != 1 {
+		t.Fatalf("expected display.ShowLive to be called once, got %d", display.liveCalls)
+	}
+	state := c.GetState()
+	if !state.LiveActive {
+		t.Fatal("expected LiveActive=true")
+	}
+	if state.LogoActive {
+		t.Fatal("expected GoLive to clear LogoActive")
+	}
+}
+
+func TestGoLiveFailsWhenDisplayReturnsError(t *testing.T) {
+	display := &fakeDisplay{liveErr: errors.New("no camera configured")}
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, display)
+
+	if err := c.GoLive(); err == nil {
+		t.Fatal("expected an error when the display can't go live")
+	}
+	if c.GetState().LiveActive {
+		t.Fatal("expected LiveActive to stay false when GoLive fails")
+	}
+}
+
+// Start() and ToggleLogo()'s "on" branch must clear LiveActive, mirroring
+// how Start()/GoLive() already keep LogoActive truthful — Live and Logo
+// are meant to be mutually exclusive.
+func TestStartAndToggleLogoClearLiveActive(t *testing.T) {
+	display := &fakeDisplay{}
+	c := New(testCatalogWithCustoms(), &fakeClicker{}, display)
+	_ = c.SelectSong(1)
+	_ = c.Start()
+	_ = c.GoLive()
+	if !c.GetState().LiveActive {
+		t.Fatal("expected LiveActive=true after GoLive")
+	}
+
+	if err := c.ToggleLogo(); err != nil {
+		t.Fatalf("ToggleLogo: %v", err)
+	}
+	if c.GetState().LiveActive {
+		t.Fatal("expected ToggleLogo (on) to clear LiveActive")
+	}
+
+	_ = c.GoLive()
+	_ = c.Stop()
+	_ = c.SelectSong(2)
+	if err := c.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if c.GetState().LiveActive {
+		t.Fatal("expected Start to clear LiveActive")
 	}
 }
